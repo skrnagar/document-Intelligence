@@ -69,7 +69,7 @@ export class DatabaseStorage implements IStorage {
   async updateDocumentEmbeddings(id: number, embeddings: Embedding[]): Promise<void> {
     await db
       .update(documents)
-      .set({ embeddings })
+      .set({ embeddings: JSON.stringify(embeddings) })
       .where(eq(documents.id, id));
   }
 }
