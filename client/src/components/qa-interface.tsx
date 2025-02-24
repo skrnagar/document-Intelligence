@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,9 +10,11 @@ import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Book } from "lucide-react";
 import { Document } from "@shared/schema";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const querySchema = z.object({
   query: z.string().min(1, "Please enter a question"),
+  documentIds: z.array(z.number()).optional(),
 });
 
 type QueryForm = z.infer<typeof querySchema>;
@@ -24,29 +26,72 @@ interface QAResponse {
 
 export default function QAInterface() {
   const [answer, setAnswer] = useState<QAResponse | null>(null);
+  const [selectedDocs, setSelectedDocs] = useState<number[]>([]);
+
+  const { data: documents } = useQuery<Document[]>({
+    queryKey: ["/api/documents"],
+  });
 
   const form = useForm<QueryForm>({
     resolver: zodResolver(querySchema),
     defaultValues: {
       query: "",
+      documentIds: [],
     },
   });
 
   const askMutation = useMutation({
-    mutationFn: async (data: QueryForm) => {
+    mutationFn: async (data: QueryForm & { documentIds: number[] }) => {
       const res = await apiRequest("POST", "/api/qa", data);
       return res.json();
     },
     onSuccess: (data: QAResponse) => {
       setAnswer(data);
-      form.reset();
+      form.reset({ query: "" });
     },
   });
 
+  const handleSubmit = (data: QueryForm) => {
+    askMutation.mutate({
+      ...data,
+      documentIds: selectedDocs,
+    });
+  };
+
   return (
     <div className="space-y-8">
+      {documents && documents.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Select Documents to Search</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {documents.map((doc) => (
+                <div key={doc.id} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`doc-${doc.id}`}
+                    checked={selectedDocs.includes(doc.id)}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        setSelectedDocs([...selectedDocs, doc.id]);
+                      } else {
+                        setSelectedDocs(selectedDocs.filter(id => id !== doc.id));
+                      }
+                    }}
+                  />
+                  <label htmlFor={`doc-${doc.id}`} className="text-sm font-medium">
+                    {doc.title}
+                  </label>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Form {...form}>
-        <form onSubmit={form.handleSubmit((data) => askMutation.mutate(data))} className="space-y-4">
+        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
           <FormField
             control={form.control}
             name="query"
@@ -89,7 +134,7 @@ export default function QAInterface() {
               <CardTitle>Answer</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-lg leading-relaxed">{answer.answer}</p>
+              <p className="text-lg leading-relaxed whitespace-pre-wrap">{answer.answer}</p>
             </CardContent>
           </Card>
 
