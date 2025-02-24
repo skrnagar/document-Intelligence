@@ -44,7 +44,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         console.log("Generating embeddings for document:", doc.id);
         const embeddings = await generateEmbeddings(doc.content);
-        await storage.updateDocumentEmbeddings(doc.id, embeddings);
+        await storage.updateDocumentEmbeddings(doc.id, [embeddings]); // Fix: Wrap single embedding in array
         console.log("Embeddings generated and stored for document:", doc.id);
       } catch (error) {
         console.error("Failed to generate embeddings:", error);

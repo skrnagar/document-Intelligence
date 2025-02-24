@@ -41,9 +41,9 @@ export function findRelevantDocuments(query: string, documents: Document[]): Doc
   const docsWithScores = documents.map((doc) => {
     let score: number;
 
-    if (doc.embeddings) {
-      // Use vector similarity if embeddings exist
-      score = cosineSimilarity(queryEmbedding, doc.embeddings as number[]);
+    if (doc.embeddings && Array.isArray(doc.embeddings) && doc.embeddings.length > 0) {
+      // Use vector similarity if embeddings exist (take first embedding)
+      score = cosineSimilarity(queryEmbedding, doc.embeddings[0]);
     } else {
       // Fallback to text similarity
       score = textSimilarity(query, doc.content);
