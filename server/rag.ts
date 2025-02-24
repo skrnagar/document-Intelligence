@@ -2,22 +2,21 @@ import { Document } from "@shared/schema";
 
 export type Embedding = number[];
 
-// Enhanced mock embedding generation with some semantic structure
-function generateMockEmbeddings(text: string): Embedding {
-  // Generate embeddings with some basic text-based patterns
+export function generateMockEmbeddings(text: string): Embedding {
+  // Generate embeddings with semantic context
   const words = text.toLowerCase().split(/\s+/);
-  const uniqueWords = [...new Set(words)];
+  const uniqueWords = Array.from(new Set(words));
 
-  // Create a 384-dimensional vector with some word-based patterns
+  // Create a 384-dimensional vector with word-based patterns
   return Array.from({ length: 384 }, (_, i) => {
     if (i < uniqueWords.length) {
-      return (uniqueWords[i].length * Math.random()) / 10;
+      // Use word length and position to create meaningful patterns
+      return (uniqueWords[i].length * Math.random() + i / uniqueWords.length) / 10;
     }
     return Math.random() * 0.1;
   });
 }
 
-// Improved cosine similarity calculation
 function cosineSimilarity(a: number[], b: number[]): number {
   const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
   const normA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
@@ -25,23 +24,41 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dotProduct / (normA * normB);
 }
 
-export function generateEmbeddings(text: string): Embedding {
-  return generateMockEmbeddings(text);
+// Improved text similarity as fallback when embeddings aren't available
+function textSimilarity(query: string, content: string): number {
+  const queryWords = new Set(query.toLowerCase().split(/\s+/));
+  const contentWords = new Set(content.toLowerCase().split(/\s+/));
+
+  const intersection = new Set([...queryWords].filter(x => contentWords.has(x)));
+  const union = new Set([...queryWords, ...contentWords]);
+
+  return intersection.size / union.size;
 }
 
 export function findRelevantDocuments(query: string, documents: Document[]): Document[] {
   const queryEmbedding = generateMockEmbeddings(query);
-  const docsWithScores = documents
-    .filter((doc) => doc.embeddings)
-    .map((doc) => ({
-      doc,
-      score: cosineSimilarity(queryEmbedding, doc.embeddings as number[])
-    }))
+
+  const docsWithScores = documents.map((doc) => {
+    let score: number;
+
+    if (doc.embeddings) {
+      // Use vector similarity if embeddings exist
+      score = cosineSimilarity(queryEmbedding, doc.embeddings as number[]);
+    } else {
+      // Fallback to text similarity
+      score = textSimilarity(query, doc.content);
+    }
+
+    return { doc, score };
+  });
+
+  // Sort by score and take top results
+  const sortedDocs = docsWithScores
     .sort((a, b) => b.score - a.score)
     .slice(0, 3);
 
   // Only return docs with reasonable similarity
-  return docsWithScores
+  return sortedDocs
     .filter(({ score }) => score > 0.1)
     .map(({ doc }) => doc);
 }
@@ -59,11 +76,5 @@ export function generateAnswer(query: string, relevantDocs: Document[]): string 
     })
     .join('\n\n');
 
-  // Generate a more structured mock answer
-  return `Based on your documents, here's what I found:
-
-${context}
-
-This information comes from ${relevantDocs.length} relevant document${relevantDocs.length > 1 ? 's' : ''}.
-For more detailed information, please refer to the source documents shown below.`;
+  return `Based on your documents, here's what I found:\n\n${context}\n\nThis information comes from ${relevantDocs.length} relevant document${relevantDocs.length > 1 ? 's' : ''}.\nFor more detailed information, please refer to the source documents shown below.`;
 }
