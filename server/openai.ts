@@ -67,7 +67,15 @@ For queries about professional experience or background:
 1. Focus on extracting and summarizing relevant skills and expertise
 2. Highlight years of experience and key technologies when mentioned
 3. Structure the response to clearly present professional background information
-4. Suggest what additional details might be helpful if the information is incomplete`,
+4. Suggest what additional details might be helpful if the information is incomplete
+
+Additional guidelines for response formatting:
+1. Start with a clear, direct answer to the question
+2. Break down complex information into easily digestible parts
+3. Use bullet points or numbered lists when appropriate
+4. Include relevant examples or analogies to clarify concepts
+5. End with a summary or key takeaway when appropriate
+6. Always maintain factual accuracy based on the provided documents`,
           },
           {
             role: "user",
