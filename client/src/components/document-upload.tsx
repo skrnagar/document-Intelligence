@@ -49,42 +49,17 @@ export default function DocumentUpload() {
       formData.append('title', data.title);
       formData.append('file', data.file[0]);
 
-      const xhr = new XMLHttpRequest();
-
-      const promise = new Promise((resolve, reject) => {
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const progress = (event.loaded / event.total) * 100;
-            setUploadProgress(progress);
-          }
-        });
-
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              resolve(JSON.parse(xhr.response));
-            } catch (error) {
-              reject(new Error('Invalid response from server'));
-            }
-          } else {
-            try {
-              const errorData = JSON.parse(xhr.response);
-              reject(new Error(errorData.message || 'Upload failed'));
-            } catch (error) {
-              reject(new Error('Upload failed'));
-            }
-          }
-        });
-
-        xhr.addEventListener('error', () => {
-          reject(new Error('Network error occurred during upload'));
-        });
+      const response = await fetch('/api/documents', {
+        method: 'POST',
+        body: formData,
       });
 
-      xhr.open('POST', '/api/documents');
-      xhr.send(formData);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Upload failed');
+      }
 
-      return promise;
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
@@ -96,6 +71,7 @@ export default function DocumentUpload() {
       });
     },
     onError: (error: Error) => {
+      console.error('Upload error:', error);
       setUploadProgress(0);
       toast({
         title: "Upload failed",
@@ -105,22 +81,14 @@ export default function DocumentUpload() {
     },
   });
 
-  // Handle beforeunload event
-  React.useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (uploadMutation.isPending) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [uploadMutation.isPending]);
+  const onSubmit = form.handleSubmit((data) => {
+    console.log('Submitting form with data:', data);
+    uploadMutation.mutate(data);
+  });
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit((data) => uploadMutation.mutate(data))} className="space-y-4">
+      <form onSubmit={onSubmit} className="space-y-4">
         <FormField
           control={form.control}
           name="title"
@@ -146,7 +114,10 @@ export default function DocumentUpload() {
                   <Input
                     type="file"
                     accept=".pdf,.docx,.txt"
-                    onChange={(e) => onChange(e.target.files)}
+                    onChange={(e) => {
+                      console.log('File selected:', e.target.files);
+                      onChange(e.target.files);
+                    }}
                     {...field}
                     className="file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
                   />
