@@ -14,20 +14,20 @@ import React from 'react';
 
 // Extend the schema to include file
 const uploadSchema = insertDocumentSchema.extend({
-  file: z.custom<FileList>()
-    .refine((files) => files?.length === 1, "Please select a file")
+  file: z.instanceof(FileList)
+    .transform(files => files.item(0))
+    .refine(file => file !== null, "Please select a file")
     .refine(
-      (files) => {
-        const file = files?.[0];
+      file => {
         const validTypes = [".pdf", ".docx", ".txt"];
         return file && validTypes.some(type => file.name.toLowerCase().endsWith(type));
       },
       "Invalid file type. Only PDF, DOCX, and TXT files are allowed."
     )
     .refine(
-      (files) => files?.[0]?.size <= 5 * 1024 * 1024,
+      file => file && file.size <= 5 * 1024 * 1024,
       "File size must be less than 5MB"
-    )
+    ),
 });
 
 type UploadFormData = z.infer<typeof uploadSchema>;
@@ -45,20 +45,21 @@ export default function DocumentUpload() {
 
   const uploadMutation = useMutation({
     mutationFn: async (data: UploadFormData) => {
-      if (!data.file?.[0]) {
+      const file = data.file;
+      if (!file) {
         throw new Error('No file selected');
       }
 
       console.log('Starting upload with data:', {
         title: data.title,
-        fileName: data.file[0].name,
-        fileSize: data.file[0].size,
-        fileType: data.file[0].type
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type
       });
 
       const formData = new FormData();
       formData.append('title', data.title);
-      formData.append('file', data.file[0]);
+      formData.append('file', file);
 
       const response = await fetch('/api/documents', {
         method: 'POST',
@@ -96,8 +97,15 @@ export default function DocumentUpload() {
   });
 
   const onSubmit = async (data: UploadFormData) => {
-    console.log('Form submitted with data:', data);
-    await uploadMutation.mutateAsync(data);
+    try {
+      console.log('Form submitted with data:', {
+        title: data.title,
+        file: data.file
+      });
+      await uploadMutation.mutateAsync(data);
+    } catch (error) {
+      console.error('Submit error:', error);
+    }
   };
 
   return (
@@ -130,7 +138,9 @@ export default function DocumentUpload() {
                     accept=".pdf,.docx,.txt"
                     onChange={(e) => {
                       console.log('File selected:', e.target.files);
-                      onChange(e.target.files);
+                      if (e.target.files) {
+                        onChange(e.target.files);
+                      }
                     }}
                     {...field}
                     className="file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
