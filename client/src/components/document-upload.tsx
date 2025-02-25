@@ -45,7 +45,17 @@ export default function DocumentUpload() {
 
   const uploadMutation = useMutation({
     mutationFn: async (data: UploadFormData) => {
-      console.log('Starting upload with data:', { title: data.title, fileName: data.file[0]?.name });
+      if (!data.file?.[0]) {
+        throw new Error('No file selected');
+      }
+
+      console.log('Starting upload with data:', {
+        title: data.title,
+        fileName: data.file[0].name,
+        fileSize: data.file[0].size,
+        fileType: data.file[0].type
+      });
+
       const formData = new FormData();
       formData.append('title', data.title);
       formData.append('file', data.file[0]);
@@ -85,14 +95,14 @@ export default function DocumentUpload() {
     },
   });
 
-  const onSubmit = form.handleSubmit((data) => {
-    console.log('Submitting form with data:', data);
-    uploadMutation.mutate(data);
-  });
+  const onSubmit = async (data: UploadFormData) => {
+    console.log('Form submitted with data:', data);
+    await uploadMutation.mutateAsync(data);
+  };
 
   return (
     <Form {...form}>
-      <form onSubmit={onSubmit} className="space-y-4">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
         <FormField
           control={form.control}
           name="title"
