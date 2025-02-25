@@ -14,18 +14,18 @@ import React from 'react';
 
 // Extend the schema to include file
 const uploadSchema = insertDocumentSchema.extend({
-  file: z.instanceof(FileList)
-    .refine((files) => files.length === 1, "Please select a file")
+  file: z.custom<FileList>()
+    .refine((files) => files?.length === 1, "Please select a file")
     .refine(
       (files) => {
-        const file = files[0];
+        const file = files?.[0];
         const validTypes = [".pdf", ".docx", ".txt"];
-        return validTypes.some(type => file.name.toLowerCase().endsWith(type));
+        return file && validTypes.some(type => file.name.toLowerCase().endsWith(type));
       },
       "Invalid file type. Only PDF, DOCX, and TXT files are allowed."
     )
     .refine(
-      (files) => files[0].size <= 5 * 1024 * 1024,
+      (files) => files?.[0]?.size <= 5 * 1024 * 1024,
       "File size must be less than 5MB"
     )
 });
@@ -61,14 +61,23 @@ export default function DocumentUpload() {
 
         xhr.addEventListener('load', () => {
           if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(JSON.parse(xhr.response));
+            try {
+              resolve(JSON.parse(xhr.response));
+            } catch (error) {
+              reject(new Error('Invalid response from server'));
+            }
           } else {
-            reject(new Error(xhr.response || 'Upload failed'));
+            try {
+              const errorData = JSON.parse(xhr.response);
+              reject(new Error(errorData.message || 'Upload failed'));
+            } catch (error) {
+              reject(new Error('Upload failed'));
+            }
           }
         });
 
         xhr.addEventListener('error', () => {
-          reject(new Error('Upload failed'));
+          reject(new Error('Network error occurred during upload'));
         });
       });
 
