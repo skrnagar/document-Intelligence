@@ -187,7 +187,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               documentId: doc.id,
               content: chunkContent,
               embedding,
-              metadata: { 
+              metadata: {
                 position: index,
                 format: parsedDoc.metadata.format,
                 pageCount: parsedDoc.metadata.pageCount
@@ -227,6 +227,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }
   });
+
+  // Add these routes after the existing document routes
+  app.delete("/api/documents/:id", ensureAuthenticated, async (req, res) => {
+    try {
+      const doc = await storage.getDocument(parseInt(req.params.id));
+      if (!doc) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      if (doc.userId !== req.user!.id) {
+        return res.status(403).json({ message: "Unauthorized" });
+      }
+
+      await storage.deleteDocument(parseInt(req.params.id));
+      res.sendStatus(204);
+    } catch (error) {
+      console.error("Error deleting document:", error);
+      res.status(500).json({ message: "Failed to delete document" });
+    }
+  });
+
+  app.patch("/api/documents/:id", ensureAuthenticated, async (req, res) => {
+    try {
+      const doc = await storage.getDocument(parseInt(req.params.id));
+      if (!doc) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      if (doc.userId !== req.user!.id) {
+        return res.status(403).json({ message: "Unauthorized" });
+      }
+
+      const updatedDoc = await storage.updateDocument(parseInt(req.params.id), {
+        title: req.body.title,
+      });
+      res.json(updatedDoc);
+    } catch (error) {
+      console.error("Error updating document:", error);
+      res.status(500).json({ message: "Failed to update document" });
+    }
+  });
+
 
   // Q&A routes
   app.post("/api/qa", ensureAuthenticated, async (req, res) => {
