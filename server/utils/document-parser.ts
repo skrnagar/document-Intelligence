@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { PDFDocument } from 'pdf-lib';
 import * as mammoth from 'mammoth';
-import * as pdfjsLib from 'pdfjs-dist';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
 
 export type SupportedFileType = 'pdf' | 'docx' | 'txt';
 
@@ -17,6 +18,7 @@ export interface ParsedDocument {
 
 export async function parseDocument(filePath: string, fileType: SupportedFileType): Promise<ParsedDocument> {
   try {
+    console.log(`Starting to parse document: ${filePath} (type: ${fileType})`);
     switch (fileType) {
       case 'pdf':
         return await parsePDF(filePath);
@@ -28,34 +30,23 @@ export async function parseDocument(filePath: string, fileType: SupportedFileTyp
         throw new Error(`Unsupported file type: ${fileType}`);
     }
   } catch (error) {
-    console.error(`Error parsing document: ${error}`);
+    console.error(`Error parsing document: ${error instanceof Error ? error.message : String(error)}`);
     throw new Error('Failed to parse document');
   }
 }
 
 async function parsePDF(filePath: string): Promise<ParsedDocument> {
   try {
-    // Load the PDF document using pdfjs-dist
-    const data = new Uint8Array(fs.readFileSync(filePath));
-    const doc = await pdfjsLib.getDocument(data).promise;
-    const numPages = doc.numPages;
-    const textContent: string[] = [];
-
-    // Extract text from each page
-    for (let i = 1; i <= numPages; i++) {
-      const page = await doc.getPage(i);
-      const content = await page.getTextContent();
-      const text = content.items
-        .map((item: any) => item.str)
-        .join(' ');
-      textContent.push(text);
-    }
+    console.log('Reading PDF file...');
+    const dataBuffer = fs.readFileSync(filePath);
+    console.log('Parsing PDF content...');
+    const data = await pdfParse(dataBuffer);
 
     return {
-      content: textContent.join('\n'),
+      content: data.text,
       metadata: {
         format: 'pdf',
-        pageCount: numPages,
+        pageCount: data.numpages,
         title: path.basename(filePath, '.pdf')
       }
     };
@@ -67,7 +58,9 @@ async function parsePDF(filePath: string): Promise<ParsedDocument> {
 
 async function parseDOCX(filePath: string): Promise<ParsedDocument> {
   try {
+    console.log('Reading DOCX file...');
     const buffer = fs.readFileSync(filePath);
+    console.log('Extracting DOCX content...');
     const result = await mammoth.extractRawText({ buffer });
 
     return {
@@ -85,6 +78,7 @@ async function parseDOCX(filePath: string): Promise<ParsedDocument> {
 
 async function parseTXT(filePath: string): Promise<ParsedDocument> {
   try {
+    console.log('Reading TXT file...');
     const content = fs.readFileSync(filePath, 'utf8');
 
     return {
