@@ -31,26 +31,31 @@ export async function generateAnswer(query: string, context: string): Promise<st
       messages: [
         {
           role: "system",
-          content: `You are a helpful assistant that answers questions based on provided document context. Keep your answers concise and relevant to the query. 
-                   Format your response in a clear, easy-to-read manner. If the context doesn't contain enough information to answer the question confidently, 
-                   acknowledge this and suggest what additional information might be needed.`,
+          content: `You are an intelligent document analysis assistant. Your role is to:
+1. Thoroughly analyze the provided document context
+2. Generate comprehensive, well-reasoned answers based on the document content
+3. Cite specific information from the documents when relevant
+4. Maintain a natural, conversational tone while being precise and informative
+5. If the context doesn't contain sufficient information, acknowledge this and suggest what additional details might be helpful
+
+Remember to integrate information from multiple documents when available, and explain complex concepts in an accessible way.`,
         },
         {
           role: "user",
-          content: `Using the following document context, please answer this question: "${query}"\n\nContext:\n${context}`,
+          content: `Please analyze the following document context and answer this question: "${query}"\n\nRelevant Document Context:\n${context}\n\nProvide a detailed, well-reasoned answer using the information from these documents.`,
         }
       ],
       temperature: 0.7,
-      max_tokens: 500,
+      max_tokens: 800,
     });
 
     return response.choices[0].message.content || "I apologize, but I couldn't generate a response. Please try rephrasing your question.";
   } catch (error) {
     console.warn("OpenAI answer generation failed, using fallback:", error);
-    // Provide a basic answer using the context
+    // Provide a more informative fallback response
     const sentences = context.split(/[.!?]+/).filter(Boolean);
     const relevantSentences = sentences.slice(0, 3).join('. ');
 
-    return `Based on the available information:\n\n${relevantSentences}\n\nFor more detailed or specific information, please try refining your question or refer to the complete documents.`;
+    return `Based on the available information:\n\n${relevantSentences}\n\nI apologize that I couldn't provide a more detailed analysis at this moment. The system is currently using a fallback mode. Please try your question again in a moment, or rephrase it for better results.`;
   }
 }
