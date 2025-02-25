@@ -58,9 +58,10 @@ export class DatabaseStorage implements IStorage {
     const [document] = await db
       .insert(documents)
       .values({
-        ...doc,
-        embeddings: null,
-        createdAt: new Date().toISOString(),
+        title: doc.title,
+        content: doc.content,
+        userId: doc.userId,
+        status: 'pending'
       })
       .returning();
     return document;
