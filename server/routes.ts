@@ -122,6 +122,9 @@ Current challenges include maintaining qubit coherence and scaling quantum syste
 // Configure multer for file uploads
 const upload = multer({
   dest: 'uploads/',
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
   fileFilter: (_req, file, callback) => {
     const allowedTypes = ['.pdf', '.docx', '.txt'];
     const ext = path.extname(file.originalname).toLowerCase();
@@ -133,8 +136,24 @@ const upload = multer({
   }
 });
 
+// Ensure uploads directory exists
+if (!fs.existsSync('uploads')) {
+  fs.mkdirSync('uploads', { recursive: true });
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
+
+  // Document management routes
+  app.get("/api/documents", ensureAuthenticated, async (req, res) => {
+    try {
+      const docs = await storage.getDocuments(req.user!.id);
+      res.json(docs);
+    } catch (error) {
+      console.error("Error fetching documents:", error);
+      res.status(500).json({ message: "Failed to fetch documents" });
+    }
+  });
 
   // Update document creation endpoint to handle file uploads
   app.post("/api/documents", ensureAuthenticated, upload.single('file'), async (req, res) => {
@@ -149,7 +168,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create document with parsed content
       const doc = await storage.createDocument({
-        title: req.body.title || parsedDoc.metadata.title || 'Untitled Document',
+        title: req.body.title || parsedDoc.metadata.title || path.basename(req.file.originalname),
         content: parsedDoc.content,
         userId: req.user!.id,
       });
@@ -187,11 +206,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(201).json(doc);
       } catch (error) {
         console.error("Failed to process document:", error);
+        // Cleanup uploaded file on error
+        fs.unlink(req.file.path, (err) => {
+          if (err) console.error("Error removing uploaded file:", err);
+        });
         res.status(500).json({ message: "Failed to process document" });
       }
     } catch (error) {
       console.error("Error creating document:", error);
-      res.status(500).json({ message: "Failed to create document" });
+      // Cleanup uploaded file on error
+      if (req.file) {
+        fs.unlink(req.file.path, (err) => {
+          if (err) console.error("Error removing uploaded file:", err);
+        });
+      }
+      if (error.message.includes('Invalid file type')) {
+        res.status(400).json({ message: error.message });
+      } else {
+        res.status(500).json({ message: "Failed to create document" });
+      }
     }
   });
 

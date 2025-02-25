@@ -4,25 +4,39 @@ import { InsertDocument, insertDocumentSchema } from "@shared/schema";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
+import { Upload, FileText } from "lucide-react";
 
 export default function DocumentUpload() {
   const { toast } = useToast();
-  
-  const form = useForm<InsertDocument>({
-    resolver: zodResolver(insertDocumentSchema),
+
+  const form = useForm<InsertDocument & { file: FileList }>({
+    resolver: zodResolver(insertDocumentSchema.extend({
+      file: insertDocumentSchema.any()
+    })),
     defaultValues: {
       title: "",
-      content: "",
     },
   });
 
   const uploadMutation = useMutation({
-    mutationFn: async (data: InsertDocument) => {
-      const res = await apiRequest("POST", "/api/documents", data);
+    mutationFn: async (data: InsertDocument & { file: FileList }) => {
+      const formData = new FormData();
+      formData.append('title', data.title);
+      formData.append('file', data.file[0]);
+
+      const res = await fetch('/api/documents', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Upload failed');
+      }
+
       return res.json();
     },
     onSuccess: () => {
@@ -52,29 +66,51 @@ export default function DocumentUpload() {
             <FormItem>
               <FormLabel>Document Title</FormLabel>
               <FormControl>
-                <Input {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        
-        <FormField
-          control={form.control}
-          name="content"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Document Content</FormLabel>
-              <FormControl>
-                <Textarea {...field} rows={10} />
+                <Input {...field} placeholder="Enter document title" />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
 
-        <Button type="submit" disabled={uploadMutation.isPending}>
-          Upload Document
+        <FormField
+          control={form.control}
+          name="file"
+          render={({ field: { onChange, value, ...field } }) => (
+            <FormItem>
+              <FormLabel>Upload Document</FormLabel>
+              <FormControl>
+                <div className="flex items-center gap-4">
+                  <Input
+                    type="file"
+                    accept=".pdf,.docx,.txt"
+                    onChange={(e) => onChange(e.target.files)}
+                    {...field}
+                    className="file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
+                  />
+                </div>
+              </FormControl>
+              <p className="text-sm text-muted-foreground">
+                Supported formats: PDF, DOCX, TXT (Max size: 5MB)
+              </p>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <Button 
+          type="submit" 
+          disabled={uploadMutation.isPending}
+          className="w-full"
+        >
+          {uploadMutation.isPending ? (
+            <>Processing...</>
+          ) : (
+            <>
+              <Upload className="w-4 h-4 mr-2" />
+              Upload Document
+            </>
+          )}
         </Button>
       </form>
     </Form>
