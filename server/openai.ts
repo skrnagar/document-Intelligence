@@ -80,8 +80,8 @@ If you find a query about OMR (Optical Mark Recognition) or similar technical te
         let fallbackResponse = `Based on the available information that might help answer your question about "${query}":\n\n`;
         fallbackResponse += relevantContext;
 
-        // Add explanatory text for technical terms
-        if (query.toUpperCase() === "OMR") {
+        // Add explanatory text for technical terms if no relevant context is found
+        if (query.toUpperCase() === "OMR" && !relevantContext.toLowerCase().includes("optical mark recognition")) {
           fallbackResponse += `\n\nOMR typically refers to Optical Mark Recognition, which is a technology used to detect marked or filled areas on forms like multiple-choice answer sheets. It's similar to but distinct from OCR (Optical Character Recognition) which reads actual text characters.\n\nOMR systems are commonly used in:
 1. Educational testing - for grading multiple-choice exams
 2. Surveys and questionnaires - for automated data collection
