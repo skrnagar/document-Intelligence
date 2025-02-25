@@ -10,6 +10,7 @@ import { Upload } from "lucide-react";
 import { z } from "zod";
 import { Progress } from "@/components/ui/progress";
 import React from 'react';
+import { queryClient } from "@/lib/queryClient";
 
 // Extend the schema to include file
 const uploadSchema = insertDocumentSchema.extend({
@@ -67,13 +68,17 @@ export default function DocumentUpload() {
           body: formData,
         });
 
+        const responseData = await response.json();
+        console.log('Upload response:', {
+          status: response.status,
+          data: responseData
+        });
+
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || 'Upload failed');
+          throw new Error(responseData.message || 'Upload failed');
         }
 
-        console.log('Upload successful, response:', response.status);
-        return response.json();
+        return responseData;
       } catch (error) {
         console.error('Upload error:', error);
         throw error;
