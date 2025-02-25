@@ -1,5 +1,9 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
+import multer from 'multer';
+import * as path from 'path';
+import * as fs from 'fs';
+import { parseDocument, getFileType } from './utils/document-parser';
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { generateEmbeddings, generateAnswer } from "./openai";
@@ -115,32 +119,42 @@ Current challenges include maintaining qubit coherence and scaling quantum syste
   });
 }
 
+// Configure multer for file uploads
+const upload = multer({
+  dest: 'uploads/',
+  fileFilter: (_req, file, callback) => {
+    const allowedTypes = ['.pdf', '.docx', '.txt'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.includes(ext)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Invalid file type. Only PDF, DOCX, and TXT files are allowed.'));
+    }
+  }
+});
+
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
 
-  // Document management routes
-  app.get("/api/documents", ensureAuthenticated, async (req, res) => {
+  // Update document creation endpoint to handle file uploads
+  app.post("/api/documents", ensureAuthenticated, upload.single('file'), async (req, res) => {
     try {
-      const docs = await storage.getDocuments(req.user!.id);
-      res.json(docs);
-    } catch (error) {
-      console.error("Error fetching documents:", error);
-      res.status(500).json({ message: "Failed to fetch documents" });
-    }
-  });
-
-  app.post("/api/documents", ensureAuthenticated, async (req, res) => {
-    try {
-      const result = insertDocumentSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json(result.error);
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
       }
 
+      // Parse the uploaded document
+      const fileType = getFileType(req.file.originalname);
+      const parsedDoc = await parseDocument(req.file.path, fileType);
+
+      // Create document with parsed content
       const doc = await storage.createDocument({
-        ...result.data,
+        title: req.body.title || parsedDoc.metadata.title || 'Untitled Document',
+        content: parsedDoc.content,
         userId: req.user!.id,
       });
 
+      // Process document chunks for RAG
       try {
         console.log("Processing document:", doc.id);
         const chunks = chunkText(doc.content);
@@ -154,19 +168,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
               documentId: doc.id,
               content: chunkContent,
               embedding,
-              metadata: { position: index }
+              metadata: { 
+                position: index,
+                format: parsedDoc.metadata.format,
+                pageCount: parsedDoc.metadata.pageCount
+              }
             });
           } catch (error) {
             console.error(`Failed to process chunk ${index + 1}:`, error);
           }
         }
 
-        console.log("Document processing completed:", doc.id);
+        // Cleanup uploaded file
+        fs.unlink(req.file.path, (err) => {
+          if (err) console.error("Error removing uploaded file:", err);
+        });
+
+        res.status(201).json(doc);
       } catch (error) {
         console.error("Failed to process document:", error);
+        res.status(500).json({ message: "Failed to process document" });
       }
-
-      res.status(201).json(doc);
     } catch (error) {
       console.error("Error creating document:", error);
       res.status(500).json({ message: "Failed to create document" });
