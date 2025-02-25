@@ -7,22 +7,41 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, FileText } from "lucide-react";
+import { Upload } from "lucide-react";
+import { z } from "zod";
+
+// Extend the schema to include file
+const uploadSchema = insertDocumentSchema.extend({
+  file: z.instanceof(FileList)
+    .refine((files) => files.length === 1, "Please select a file")
+    .refine(
+      (files) => {
+        const file = files[0];
+        const validTypes = [".pdf", ".docx", ".txt"];
+        return validTypes.some(type => file.name.toLowerCase().endsWith(type));
+      },
+      "Invalid file type. Only PDF, DOCX, and TXT files are allowed."
+    )
+    .refine(
+      (files) => files[0].size <= 5 * 1024 * 1024,
+      "File size must be less than 5MB"
+    )
+});
+
+type UploadFormData = z.infer<typeof uploadSchema>;
 
 export default function DocumentUpload() {
   const { toast } = useToast();
 
-  const form = useForm<InsertDocument & { file: FileList }>({
-    resolver: zodResolver(insertDocumentSchema.extend({
-      file: insertDocumentSchema.any()
-    })),
+  const form = useForm<UploadFormData>({
+    resolver: zodResolver(uploadSchema),
     defaultValues: {
       title: "",
     },
   });
 
   const uploadMutation = useMutation({
-    mutationFn: async (data: InsertDocument & { file: FileList }) => {
+    mutationFn: async (data: UploadFormData) => {
       const formData = new FormData();
       formData.append('title', data.title);
       formData.append('file', data.file[0]);
