@@ -2,7 +2,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { InsertDocument, insertDocumentSchema } from "@shared/schema";
 import { useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
@@ -62,41 +61,23 @@ export default function DocumentUpload() {
       formData.append('title', data.title);
       formData.append('file', file);
 
-      // Use XMLHttpRequest to track upload progress
-      return new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const progress = (event.loaded / event.total) * 100;
-            setUploadProgress(progress);
-          }
+      try {
+        const response = await fetch('/api/documents', {
+          method: 'POST',
+          body: formData,
         });
 
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              resolve(JSON.parse(xhr.response));
-            } catch (error) {
-              reject(new Error('Invalid response from server'));
-            }
-          } else {
-            try {
-              const errorData = JSON.parse(xhr.response);
-              reject(new Error(errorData.message || 'Upload failed'));
-            } catch (error) {
-              reject(new Error('Upload failed'));
-            }
-          }
-        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Upload failed');
+        }
 
-        xhr.addEventListener('error', () => {
-          reject(new Error('Network error occurred during upload'));
-        });
-
-        xhr.open('POST', '/api/documents');
-        xhr.send(formData);
-      });
+        console.log('Upload successful, response:', response.status);
+        return response.json();
+      } catch (error) {
+        console.error('Upload error:', error);
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
@@ -122,7 +103,11 @@ export default function DocumentUpload() {
     try {
       console.log('Form submitted with data:', {
         title: data.title,
-        file: data.file
+        file: data.file && {
+          name: data.file.name,
+          size: data.file.size,
+          type: data.file.type
+        }
       });
       await uploadMutation.mutateAsync(data);
     } catch (error) {

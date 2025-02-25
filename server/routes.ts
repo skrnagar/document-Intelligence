@@ -24,7 +24,7 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // Configure multer for file uploads
-const storage = multer.diskStorage({
+const multerStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, 'uploads/');
   },
@@ -35,7 +35,7 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({
-  storage: storage,
+  storage: multerStorage,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
   },
@@ -89,7 +89,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log('File upload request received:', {
         body: req.body,
-        file: req.file
+        file: req.file ? {
+          filename: req.file.filename,
+          mimetype: req.file.mimetype,
+          size: req.file.size
+        } : null
       });
 
       if (!req.file) {
