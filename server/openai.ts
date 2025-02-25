@@ -1,10 +1,5 @@
 import OpenAI from "openai";
 import { Document } from "@shared/schema";
-import { generateMockEmbeddings } from "./rag";
-
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OPENAI_API_KEY must be set");
-}
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -18,9 +13,8 @@ export async function generateEmbeddings(text: string): Promise<number[]> {
     });
     return response.data[0].embedding;
   } catch (error) {
-    console.warn("OpenAI embeddings failed, using fallback:", error);
-    // Use our mock embeddings as fallback
-    return generateMockEmbeddings(text);
+    console.warn("OpenAI embeddings failed:", error);
+    throw new Error("Failed to generate embeddings");
   }
 }
 
@@ -57,7 +51,13 @@ export async function generateAnswer(query: string, context: string): Promise<st
 
 Remember to integrate information from multiple documents when available, and explain complex concepts in an accessible way.
 
-If you find a query about OMR (Optical Mark Recognition) or similar technical terms, make sure to explain them in detail using the context provided.`,
+If you find a query about OMR (Optical Mark Recognition) or similar technical terms, make sure to explain them in detail using the context provided.
+
+For queries about professional experience or background:
+1. Focus on extracting and summarizing relevant skills and expertise
+2. Highlight years of experience and key technologies when mentioned
+3. Structure the response to clearly present professional background information
+4. Suggest what additional details might be helpful if the information is incomplete`,
         },
         {
           role: "user",
@@ -89,7 +89,15 @@ If you find a query about OMR (Optical Mark Recognition) or similar technical te
 4. Form processing - for automated form data extraction`;
         }
 
-        fallbackResponse += "\n\nWhile I'm currently operating in fallback mode due to technical limitations, I've provided the most relevant information from your documents. For a more detailed analysis, please try your question again in a moment.";
+        // Add explanatory text for biographical queries
+        if (query.toLowerCase().includes("experience") || query.toLowerCase().includes("background")) {
+          const nameMatch = context.match(/([A-Z][a-z]+ )+[A-Z][a-z]+/);
+          if (nameMatch) {
+            fallbackResponse += `\n\nI found some information about professional experience in the documents. To get more detailed information about specific skills or work history, you might want to try searching for specific technologies or time periods.`;
+          }
+        }
+
+        fallbackResponse += "\n\nWhile I'm currently operating in fallback mode due to technical limitations, I've provided the most relevant information from your documents. For a more comprehensive answer, please try your question again in a moment.";
 
         return fallbackResponse;
       }
