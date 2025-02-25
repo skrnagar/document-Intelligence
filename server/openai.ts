@@ -4,45 +4,55 @@ import { Document } from "@shared/schema";
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+async function retryWithExponentialBackoff<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000
+): Promise<T> {
+  let lastError;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (error.status === 429 || (error.status >= 500 && error.status < 600)) {
+        const delay = baseDelay * Math.pow(2, attempt);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw lastError;
+}
+
 export async function generateEmbeddings(text: string): Promise<number[]> {
   try {
-    const response = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: text,
-      dimensions: 384,
-    });
+    const response = await retryWithExponentialBackoff(() => 
+      openai.embeddings.create({
+        model: "text-embedding-3-small",
+        input: text,
+        dimensions: 384,
+      })
+    );
     return response.data[0].embedding;
   } catch (error) {
-    console.warn("OpenAI embeddings failed:", error);
+    console.error("OpenAI embeddings failed after retries:", error);
     throw new Error("Failed to generate embeddings");
   }
 }
 
-function extractRelevantContext(query: string, context: string): string {
-  const queryTerms = query.toLowerCase().split(/\s+/);
-  const sentences = context.split(/[.!?]+/).filter(Boolean);
-
-  // Find sentences most relevant to the query terms
-  const relevantSentences = sentences.filter(sentence => 
-    queryTerms.some(term => sentence.toLowerCase().includes(term))
-  );
-
-  // If no direct matches, include surrounding context
-  if (relevantSentences.length === 0) {
-    return sentences.slice(0, 3).join('. ');
-  }
-
-  return relevantSentences.slice(0, 5).join('. ');
-}
-
 export async function generateAnswer(query: string, context: string): Promise<string> {
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: `You are an intelligent document analysis assistant. Your role is to:
+    const response = await retryWithExponentialBackoff(() => 
+      openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are an intelligent document analysis assistant. Your role is to:
 1. Thoroughly analyze the provided document context
 2. Generate comprehensive, well-reasoned answers based on the document content
 3. Cite specific information from the documents when relevant
@@ -58,19 +68,20 @@ For queries about professional experience or background:
 2. Highlight years of experience and key technologies when mentioned
 3. Structure the response to clearly present professional background information
 4. Suggest what additional details might be helpful if the information is incomplete`,
-        },
-        {
-          role: "user",
-          content: `Please analyze the following document context and answer this question: "${query}"\n\nRelevant Document Context:\n${context}\n\nProvide a detailed, well-reasoned answer using the information from these documents.`,
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 800,
-    });
+          },
+          {
+            role: "user",
+            content: `Please analyze the following document context and answer this question: "${query}"\n\nRelevant Document Context:\n${context}\n\nProvide a detailed, well-reasoned answer using the information from these documents.`,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 800,
+      })
+    );
 
     return response.choices[0].message.content || "I apologize, but I couldn't generate a response. Please try rephrasing your question.";
   } catch (error) {
-    console.warn("OpenAI answer generation failed:", error);
+    console.error("OpenAI answer generation failed:", error);
 
     // Enhanced fallback response generation
     try {
@@ -97,8 +108,6 @@ For queries about professional experience or background:
           }
         }
 
-        fallbackResponse += "\n\nWhile I'm currently operating in fallback mode due to technical limitations, I've provided the most relevant information from your documents. For a more comprehensive answer, please try your question again in a moment.";
-
         return fallbackResponse;
       }
     } catch (fallbackError) {
@@ -107,4 +116,21 @@ For queries about professional experience or background:
 
     return `I apologize, but I'm currently experiencing technical limitations that prevent me from providing a detailed analysis of your question about "${query}". This might be due to API rate limits or service constraints. Please try again in a few moments, or rephrase your question to focus on specific aspects you'd like to learn about.`;
   }
+}
+
+function extractRelevantContext(query: string, context: string): string {
+  const queryTerms = query.toLowerCase().split(/\s+/);
+  const sentences = context.split(/[.!?]+/).filter(Boolean);
+
+  // Find sentences most relevant to the query terms
+  const relevantSentences = sentences.filter(sentence => 
+    queryTerms.some(term => sentence.toLowerCase().includes(term))
+  );
+
+  // If no direct matches, include surrounding context
+  if (relevantSentences.length === 0) {
+    return sentences.slice(0, 3).join('. ');
+  }
+
+  return relevantSentences.slice(0, 5).join('. ');
 }

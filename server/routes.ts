@@ -116,14 +116,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Find relevant documents using RAG
-      const relevantDocs = await findRelevantDocuments(query, availableDocs);
-      console.log("Found relevant documents:", relevantDocs.length);
+      let relevantDocs;
+      try {
+        relevantDocs = await findRelevantDocuments(query, availableDocs);
+        console.log("Found relevant documents:", relevantDocs.length);
 
-      if (relevantDocs.length === 0) {
-        return res.json({
-          answer: "I couldn't find any relevant documents to answer your question. Try selecting different documents or rephrasing your question.",
-          relevantDocs: []
-        });
+        if (relevantDocs.length === 0) {
+          return res.json({
+            answer: "I couldn't find any relevant information in the selected documents. Try selecting different documents or rephrasing your question to be more specific.",
+            relevantDocs: []
+          });
+        }
+      } catch (error) {
+        console.error("Error finding relevant documents:", error);
+        // If embeddings fail, try direct text search
+        relevantDocs = availableDocs.filter(doc =>
+          doc.content.toLowerCase().includes(query.toLowerCase()) ||
+          doc.title.toLowerCase().includes(query.toLowerCase())
+        );
       }
 
       // Prepare context with document metadata for better context understanding
@@ -131,9 +141,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .map(doc => `Document Title: ${doc.title}\nDocument Content:\n${doc.content}\n---\n`)
         .join('\n');
 
-      const answer = await generateAnswer(query, context);
-
-      res.json({ answer, relevantDocs });
+      try {
+        const answer = await generateAnswer(query, context);
+        res.json({ answer, relevantDocs });
+      } catch (error) {
+        console.error("Error generating answer:", error);
+        res.json({
+          answer: "I'm currently experiencing technical limitations. Please try again in a moment. In the meantime, you can try searching with different keywords or selecting different documents.",
+          relevantDocs
+        });
+      }
     } catch (error) {
       console.error("Error processing Q&A request:", error);
       res.status(500).json({ message: "Failed to process Q&A request" });
