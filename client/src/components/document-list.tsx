@@ -31,8 +31,17 @@ export default function DocumentList() {
   const [editDoc, setEditDoc] = useState<Document | null>(null);
   const [newTitle, setNewTitle] = useState("");
 
-  const { data: documents, isLoading } = useQuery<Document[]>({
+  const { data: documents, isLoading, error } = useQuery<Document[]>({
     queryKey: ["/api/documents"],
+    retry: 3,
+    onError: (error: Error) => {
+      console.error('Error fetching documents:', error);
+      toast({
+        title: "Error loading documents",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
   });
 
   const deleteMutation = useMutation({
@@ -81,6 +90,14 @@ export default function DocumentList() {
     return (
       <div className="flex justify-center p-8">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center p-8 text-destructive">
+        Error loading documents. Please try again.
       </div>
     );
   }

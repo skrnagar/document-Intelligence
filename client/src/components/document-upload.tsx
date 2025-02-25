@@ -45,6 +45,7 @@ export default function DocumentUpload() {
 
   const uploadMutation = useMutation({
     mutationFn: async (data: UploadFormData) => {
+      console.log('Starting upload with data:', { title: data.title, fileName: data.file[0]?.name });
       const formData = new FormData();
       formData.append('title', data.title);
       formData.append('file', data.file[0]);
@@ -54,12 +55,15 @@ export default function DocumentUpload() {
         body: formData,
       });
 
+      console.log('Upload response status:', response.status);
+      const responseData = await response.json();
+      console.log('Upload response data:', responseData);
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Upload failed');
+        throw new Error(responseData.message || 'Upload failed');
       }
 
-      return response.json();
+      return responseData;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
