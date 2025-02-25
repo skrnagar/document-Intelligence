@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
-import { generateEmbeddings, generateAnswer } from "./openai";
+import { generateEmbeddings } from "./openai";
 import { insertDocumentSchema } from "@shared/schema";
 import { findRelevantDocuments } from "./rag";
 
@@ -11,6 +11,25 @@ function ensureAuthenticated(req: Request, res: Response, next: NextFunction) {
     return next();
   }
   res.status(401).json({ message: "Unauthorized" });
+}
+
+// Function to split text into chunks
+function chunkText(text: string, maxChunkSize: number = 1000): string[] {
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  const chunks: string[] = [];
+  let currentChunk = '';
+
+  for (const sentence of sentences) {
+    if ((currentChunk + sentence).length <= maxChunkSize) {
+      currentChunk += sentence;
+    } else {
+      if (currentChunk) chunks.push(currentChunk.trim());
+      currentChunk = sentence;
+    }
+  }
+
+  if (currentChunk) chunks.push(currentChunk.trim());
+  return chunks;
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -40,15 +59,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: req.user!.id,
       });
 
-      // Generate embeddings asynchronously
+      // Process document in chunks
       try {
-        console.log("Generating embeddings for document:", doc.id);
-        const embeddings = await generateEmbeddings(doc.content);
-        await storage.updateDocumentEmbeddings(doc.id, [embeddings]); // Fix: Wrap single embedding in array
-        console.log("Embeddings generated and stored for document:", doc.id);
+        console.log("Processing document:", doc.id);
+        const chunks = chunkText(doc.content);
+
+        for (const [index, chunkContent] of chunks.entries()) {
+          try {
+            // Generate embeddings for chunk
+            console.log(`Generating embeddings for chunk ${index + 1}/${chunks.length}`);
+            const embedding = await generateEmbeddings(chunkContent);
+
+            // Store chunk with embedding
+            await storage.createDocumentChunk({
+              documentId: doc.id,
+              content: chunkContent,
+              embedding,
+              metadata: { position: index }
+            });
+          } catch (error) {
+            console.error(`Failed to process chunk ${index + 1}:`, error);
+          }
+        }
+
+        // Update document status to completed.  This line requires a 'db' and 'documents' variable to be defined elsewhere and imported.
+        //await db.update(documents).set({ status: 'completed' }).where(eq(documents.id, doc.id));
+
+        console.log("Document processing completed:", doc.id);
       } catch (error) {
-        console.error("Failed to generate embeddings:", error);
-        // Don't fail the request if embeddings generation fails
+        console.error("Failed to process document:", error);
+        // Update status to error. This line requires a 'db' and 'documents' variable to be defined elsewhere and imported.
+        //await db.update(documents).set({ status: 'error' }).where(eq(documents.id, doc.id));
       }
 
       res.status(201).json(doc);
@@ -83,8 +124,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Find relevant documents
-      const relevantDocs = findRelevantDocuments(query, availableDocs);
+      // Find relevant documents using RAG
+      const relevantDocs = await findRelevantDocuments(query, availableDocs);
       console.log("Found relevant documents:", relevantDocs.length);
 
       if (relevantDocs.length === 0) {
@@ -94,12 +135,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Generate context from relevant documents
+      // Generate answer using OpenAI
       const context = relevantDocs
         .map(doc => `Document: ${doc.title}\n${doc.content}`)
         .join('\n\n');
 
-      // Generate answer using OpenAI
       const answer = await generateAnswer(query, context);
 
       res.json({ answer, relevantDocs });

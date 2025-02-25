@@ -1,8 +1,8 @@
-import { User, InsertUser, Document, InsertDocument } from "@shared/schema";
+import { User, InsertUser, Document, InsertDocument, DocumentChunk, InsertDocumentChunk } from "@shared/schema";
 import session from "express-session";
 import type { Embedding } from "./rag";
 import { db } from "./db";
-import { documents, users } from "@shared/schema";
+import { documents, users, documentChunks } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db";
@@ -16,7 +16,8 @@ export interface IStorage {
   getDocuments(userId: number): Promise<Document[]>;
   getDocument(id: number): Promise<Document | undefined>;
   createDocument(doc: InsertDocument & { userId: number }): Promise<Document>;
-  updateDocumentEmbeddings(id: number, embeddings: Embedding[]): Promise<void>;
+  getDocumentChunks(documentId: number): Promise<DocumentChunk[]>;
+  createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk>;
   sessionStore: session.Store;
 }
 
@@ -67,11 +68,16 @@ export class DatabaseStorage implements IStorage {
     return document;
   }
 
-  async updateDocumentEmbeddings(id: number, embeddings: Embedding[]): Promise<void> {
-    await db
-      .update(documents)
-      .set({ embeddings: JSON.stringify(embeddings) })
-      .where(eq(documents.id, id));
+  async getDocumentChunks(documentId: number): Promise<DocumentChunk[]> {
+    return db.select().from(documentChunks).where(eq(documentChunks.documentId, documentId));
+  }
+
+  async createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk> {
+    const [documentChunk] = await db
+      .insert(documentChunks)
+      .values(chunk)
+      .returning();
+    return documentChunk;
   }
 }
 

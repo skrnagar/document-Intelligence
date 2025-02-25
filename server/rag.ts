@@ -1,4 +1,6 @@
-import { Document } from "@shared/schema";
+import { Document, DocumentChunk } from "@shared/schema";
+import { storage } from "./storage";
+import { generateEmbeddings } from "./openai";
 
 export type Embedding = number[];
 
@@ -26,45 +28,65 @@ function cosineSimilarity(a: number[], b: number[]): number {
 
 // Improved text similarity as fallback when embeddings aren't available
 function textSimilarity(query: string, content: string): number {
-  const queryWords = new Set(query.toLowerCase().split(/\s+/));
-  const contentWords = new Set(content.toLowerCase().split(/\s+/));
+  const queryWords = query.toLowerCase().split(/\s+/);
+  const contentWords = content.toLowerCase().split(/\s+/);
 
-  const intersection = new Set([...queryWords].filter(x => contentWords.has(x)));
-  const union = new Set([...queryWords, ...contentWords]);
+  const querySet = new Set(queryWords);
+  const contentSet = new Set(contentWords);
 
-  return intersection.size / union.size;
+  const intersection = queryWords.filter(x => contentSet.has(x)).length;
+  const union = new Set([...queryWords, ...contentWords]).size;
+
+  return intersection / union;
 }
 
-export function findRelevantDocuments(query: string, documents: Document[]): Document[] {
-  const queryEmbedding = generateMockEmbeddings(query);
+export async function findRelevantDocuments(query: string, documents: Document[]): Promise<Document[]> {
+  try {
+    // Generate query embedding
+    const queryEmbedding = await generateEmbeddings(query);
 
-  const docsWithScores = documents.map((doc) => {
-    let score: number;
+    // Get all chunks for the provided documents
+    const relevantChunks: Array<{ chunk: DocumentChunk; score: number }> = [];
 
-    if (doc.embeddings) {
-      // Parse stored embeddings and use the first one
-      const parsedEmbeddings = typeof doc.embeddings === 'string' 
-        ? JSON.parse(doc.embeddings) 
-        : doc.embeddings;
+    for (const doc of documents) {
+      const chunks = await storage.getDocumentChunks(doc.id);
 
-      score = cosineSimilarity(queryEmbedding, Array.isArray(parsedEmbeddings) ? parsedEmbeddings[0] : parsedEmbeddings);
-    } else {
-      // Fallback to text similarity
-      score = textSimilarity(query, doc.content);
+      for (const chunk of chunks) {
+        const embedding = chunk.embedding as number[];
+        if (embedding) {
+          const score = cosineSimilarity(queryEmbedding, embedding);
+          relevantChunks.push({ chunk, score });
+        } else {
+          // Fallback to text similarity if embedding is not available
+          const score = textSimilarity(query, chunk.content);
+          relevantChunks.push({ chunk, score });
+        }
+      }
     }
 
-    return { doc, score };
-  });
+    // Sort chunks by relevance score
+    relevantChunks.sort((a, b) => b.score - a.score);
 
-  // Sort by score and take top results
-  const sortedDocs = docsWithScores
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
+    // Get unique documents from top chunks
+    const topChunks = relevantChunks.slice(0, 5);
+    const relevantDocIds = new Set(topChunks.map(({ chunk }) => chunk.documentId));
 
-  // Only return docs with reasonable similarity
-  return sortedDocs
-    .filter(({ score }) => score > 0.1)
-    .map(({ doc }) => doc);
+    // Return full documents for the relevant chunks
+    return documents.filter(doc => relevantDocIds.has(doc.id));
+  } catch (error) {
+    console.error("Error in findRelevantDocuments:", error);
+
+    // Fallback to basic text similarity if embedding comparison fails
+    return documents
+      .map(doc => ({
+        doc,
+        score: textSimilarity(query, doc.content)
+      }))
+      .filter(({ score }) => score > 0.1)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .map(({ doc }) => doc);
+  }
 }
 
 export function generateAnswer(query: string, relevantDocs: Document[]): string {
