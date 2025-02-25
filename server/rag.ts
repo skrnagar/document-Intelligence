@@ -4,21 +4,6 @@ import { generateEmbeddings } from "./openai";
 
 export type Embedding = number[];
 
-export function generateMockEmbeddings(text: string): Embedding {
-  // Generate embeddings with semantic context
-  const words = text.toLowerCase().split(/\s+/);
-  const uniqueWords = Array.from(new Set(words));
-
-  // Create a 384-dimensional vector with word-based patterns
-  return Array.from({ length: 384 }, (_, i) => {
-    if (i < uniqueWords.length) {
-      // Use word length and position to create meaningful patterns
-      return (uniqueWords[i].length * Math.random() + i / uniqueWords.length) / 10;
-    }
-    return Math.random() * 0.1;
-  });
-}
-
 function cosineSimilarity(a: number[], b: number[]): number {
   const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
   const normA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
@@ -27,24 +12,32 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 function textSimilarity(query: string, content: string): number {
+  // Enhanced text similarity for biographical information
   const queryWords = query.toLowerCase().split(/\s+/);
   const contentWords = content.toLowerCase().split(/\s+/);
+
+  // Give higher weight to matches of full names or professional terms
+  const professionalTerms = ['experience', 'skills', 'work', 'developer', 'engineer'];
+  const nameMatches = queryWords.filter(word => 
+    contentWords.some(contentWord => contentWord.includes(word) && word.length > 3)
+  ).length;
+
+  const termMatches = queryWords.filter(word =>
+    professionalTerms.includes(word) && contentWords.includes(word)
+  ).length;
 
   const querySet = new Set(queryWords);
   const contentSet = new Set(contentWords);
 
-  const intersection = queryWords.filter(x => contentSet.has(x)).length;
-  const union = new Set([...queryWords, ...contentWords]).size;
+  const baseScore = (nameMatches * 2 + termMatches * 1.5) / queryWords.length;
+  const contextScore = queryWords.filter(x => contentSet.has(x)).length / queryWords.length;
 
-  return intersection / union;
+  return Math.min(1, (baseScore + contextScore) / 2);
 }
 
 export async function findRelevantDocuments(query: string, documents: Document[]): Promise<Document[]> {
   try {
-    // Generate query embedding
     const queryEmbedding = await generateEmbeddings(query);
-
-    // Get all chunks for the provided documents
     const relevantChunks: Array<{ chunk: DocumentChunk; score: number }> = [];
 
     for (const doc of documents) {
@@ -56,32 +49,31 @@ export async function findRelevantDocuments(query: string, documents: Document[]
           const score = cosineSimilarity(queryEmbedding, embedding);
           relevantChunks.push({ chunk, score });
         } else {
-          // Fallback to text similarity if embedding is not available
+          // Enhanced fallback scoring for biographical queries
           const score = textSimilarity(query, chunk.content);
           relevantChunks.push({ chunk, score });
         }
       }
     }
 
-    // Sort chunks by relevance score
     relevantChunks.sort((a, b) => b.score - a.score);
 
-    // Get unique documents from top chunks
+    // Get unique documents from top chunks, considering chunk scores
     const topChunks = relevantChunks.slice(0, 5);
     const relevantDocIds = new Set(topChunks.map(({ chunk }) => chunk.documentId));
 
-    // Return full documents for the relevant chunks
+    // Return documents with high relevance scores
     return documents.filter(doc => relevantDocIds.has(doc.id));
   } catch (error) {
     console.error("Error in findRelevantDocuments:", error);
 
-    // Fallback to basic text similarity if embedding comparison fails
+    // Improved fallback handling for biographical queries
     return documents
       .map(doc => ({
         doc,
         score: textSimilarity(query, doc.content)
       }))
-      .filter(({ score }) => score > 0.1)
+      .filter(({ score }) => score > 0.2) // Lower threshold for biographical matches
       .sort((a, b) => b.score - a.score)
       .slice(0, 3)
       .map(({ doc }) => doc);
