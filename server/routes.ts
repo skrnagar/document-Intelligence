@@ -17,6 +17,28 @@ function ensureAuthenticated(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ message: "Unauthorized" });
 }
 
+// Configure multer for file uploads
+const upload = multer({
+  dest: 'uploads/',
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (_req, file, callback) => {
+    const allowedTypes = ['.pdf', '.docx', '.txt'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.includes(ext)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Invalid file type. Only PDF, DOCX, and TXT files are allowed.'));
+    }
+  }
+});
+
+// Ensure uploads directory exists
+if (!fs.existsSync('uploads')) {
+  fs.mkdirSync('uploads', { recursive: true });
+}
+
 // Function to split text into chunks
 function chunkText(text: string, maxChunkSize: number = 1000): string[] {
   const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
@@ -119,28 +141,6 @@ Current challenges include maintaining qubit coherence and scaling quantum syste
   });
 }
 
-// Configure multer for file uploads
-const upload = multer({
-  dest: 'uploads/',
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-  },
-  fileFilter: (_req, file, callback) => {
-    const allowedTypes = ['.pdf', '.docx', '.txt'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowedTypes.includes(ext)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Invalid file type. Only PDF, DOCX, and TXT files are allowed.'));
-    }
-  }
-});
-
-// Ensure uploads directory exists
-if (!fs.existsSync('uploads')) {
-  fs.mkdirSync('uploads', { recursive: true });
-}
-
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
 
@@ -158,29 +158,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update document creation endpoint to handle file uploads
   app.post("/api/documents", ensureAuthenticated, upload.single('file'), async (req, res) => {
     try {
+      console.log('Received file upload request:', {
+        file: req.file,
+        body: req.body
+      });
+
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
       // Parse the uploaded document
       const fileType = getFileType(req.file.originalname);
-      const parsedDoc = await parseDocument(req.file.path, fileType);
+      console.log('Processing file type:', fileType);
 
-      // Create document with parsed content
-      const doc = await storage.createDocument({
-        title: req.body.title || parsedDoc.metadata.title || path.basename(req.file.originalname),
-        content: parsedDoc.content,
-        userId: req.user!.id,
-      });
-
-      // Process document chunks for RAG
       try {
-        console.log("Processing document:", doc.id);
+        const parsedDoc = await parseDocument(req.file.path, fileType);
+        console.log('Document parsed successfully');
+
+        // Create document with parsed content
+        const doc = await storage.createDocument({
+          title: req.body.title || parsedDoc.metadata.title || path.basename(req.file.originalname),
+          content: parsedDoc.content,
+          userId: req.user!.id,
+        });
+
+        // Process document chunks for RAG
+        console.log("Processing document chunks:", doc.id);
         const chunks = chunkText(doc.content);
 
         for (const [index, chunkContent] of chunks.entries()) {
           try {
-            console.log(`Generating embeddings for chunk ${index + 1}/${chunks.length}`);
+            console.log(`Processing chunk ${index + 1}/${chunks.length}`);
             const embedding = await generateEmbeddings(chunkContent);
 
             await storage.createDocumentChunk({
@@ -204,13 +212,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         res.status(201).json(doc);
-      } catch (error) {
-        console.error("Failed to process document:", error);
+      } catch (parseError) {
+        console.error("Error parsing document:", parseError);
         // Cleanup uploaded file on error
         fs.unlink(req.file.path, (err) => {
           if (err) console.error("Error removing uploaded file:", err);
         });
-        res.status(500).json({ message: "Failed to process document" });
+        throw parseError;
       }
     } catch (error) {
       console.error("Error creating document:", error);
@@ -228,7 +236,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Add these routes after the existing document routes
+  // Add routes for document management
   app.delete("/api/documents/:id", ensureAuthenticated, async (req, res) => {
     try {
       const doc = await storage.getDocument(parseInt(req.params.id));
@@ -267,54 +275,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-
   // Q&A routes
   app.post("/api/qa", ensureAuthenticated, async (req, res) => {
     try {
-      const { query, documentIds } = req.body;
+      const { query } = req.body;
       if (!query) {
         return res.status(400).json({ message: "Query is required" });
       }
 
-      console.log("Processing Q&A request:", { query, documentIds });
-
       // Get user's documents
       const docs = await storage.getDocuments(req.user!.id);
 
-      // Filter by selected documents if provided
-      const availableDocs = documentIds && documentIds.length > 0
-        ? docs.filter(doc => documentIds.includes(doc.id))
-        : docs;
-
-      if (!availableDocs.length) {
+      if (!docs.length) {
         return res.json({
-          answer: "Please select some documents to search through.",
+          answer: "You haven't uploaded any documents yet. Please upload some documents first.",
           relevantDocs: []
         });
       }
 
       // Find relevant documents using RAG
-      let relevantDocs;
-      try {
-        relevantDocs = await findRelevantDocuments(query, availableDocs);
-        console.log("Found relevant documents:", relevantDocs.length);
+      const relevantDocs = await findRelevantDocuments(query, docs);
+      console.log("Found relevant documents:", relevantDocs.length);
 
-        if (relevantDocs.length === 0) {
-          return res.json({
-            answer: "I couldn't find any relevant information in the selected documents. Try selecting different documents or rephrasing your question to be more specific.",
-            relevantDocs: []
-          });
-        }
-      } catch (error) {
-        console.error("Error finding relevant documents:", error);
-        // If embeddings fail, try direct text search
-        relevantDocs = availableDocs.filter(doc =>
-          doc.content.toLowerCase().includes(query.toLowerCase()) ||
-          doc.title.toLowerCase().includes(query.toLowerCase())
-        );
+      if (relevantDocs.length === 0) {
+        return res.json({
+          answer: "I couldn't find any relevant information in your documents. Try rephrasing your question or uploading more relevant documents.",
+          relevantDocs: []
+        });
       }
 
-      // Prepare context with document metadata for better context understanding
+      // Prepare context with document metadata
       const context = relevantDocs
         .map(doc => `Document Title: ${doc.title}\nDocument Content:\n${doc.content}\n---\n`)
         .join('\n');
@@ -325,7 +315,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (error) {
         console.error("Error generating answer:", error);
         res.json({
-          answer: "I'm currently experiencing technical limitations. Please try again in a moment. In the meantime, you can try searching with different keywords or selecting different documents.",
+          answer: "I'm currently experiencing technical limitations. Please try again in a moment.",
           relevantDocs
         });
       }
