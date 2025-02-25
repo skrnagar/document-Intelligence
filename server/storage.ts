@@ -58,16 +58,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createDocument(doc: InsertDocument & { userId: number }): Promise<Document> {
-    const [document] = await db
-      .insert(documents)
-      .values({
-        title: doc.title,
-        content: doc.content,
-        userId: doc.userId,
-        status: 'pending'
-      })
-      .returning();
-    return document;
+    try {
+      const [document] = await db
+        .insert(documents)
+        .values({
+          title: doc.title,
+          content: doc.content,
+          userId: doc.userId,
+          status: 'pending'
+        })
+        .returning();
+      return document;
+    } catch (error) {
+      console.error('Error creating document:', error);
+      throw new Error('Failed to create document in database');
+    }
   }
 
   async getDocumentChunks(documentId: number): Promise<DocumentChunk[]> {
