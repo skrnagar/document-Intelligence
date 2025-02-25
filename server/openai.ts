@@ -45,7 +45,7 @@ If you find a query about OMR (Optical Mark Recognition) or similar technical te
         {
           role: "user",
           content: `Please analyze the following document context and answer this question: "${query}"\n\nRelevant Document Context:\n${context}\n\nProvide a detailed, well-reasoned answer using the information from these documents.`,
-        }
+        },
       ],
       temperature: 0.7,
       max_tokens: 800,

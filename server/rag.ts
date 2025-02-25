@@ -26,7 +26,6 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dotProduct / (normA * normB);
 }
 
-// Improved text similarity as fallback when embeddings aren't available
 function textSimilarity(query: string, content: string): number {
   const queryWords = query.toLowerCase().split(/\s+/);
   const contentWords = content.toLowerCase().split(/\s+/);
