@@ -15,12 +15,13 @@ import React from 'react';
 // Extend the schema to include file
 const uploadSchema = insertDocumentSchema.extend({
   file: z.instanceof(FileList)
-    .transform(files => files.item(0))
-    .refine(file => file !== null, "Please select a file")
+    .transform(list => list.item(0))
+    .refine(file => file != null, "Please select a file")
     .refine(
       file => {
+        if (!file) return false;
         const validTypes = [".pdf", ".docx", ".txt"];
-        return file && validTypes.some(type => file.name.toLowerCase().endsWith(type));
+        return validTypes.some(type => file.name.toLowerCase().endsWith(type));
       },
       "Invalid file type. Only PDF, DOCX, and TXT files are allowed."
     )
@@ -61,20 +62,41 @@ export default function DocumentUpload() {
       formData.append('title', data.title);
       formData.append('file', file);
 
-      const response = await fetch('/api/documents', {
-        method: 'POST',
-        body: formData,
+      // Use XMLHttpRequest to track upload progress
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            const progress = (event.loaded / event.total) * 100;
+            setUploadProgress(progress);
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              resolve(JSON.parse(xhr.response));
+            } catch (error) {
+              reject(new Error('Invalid response from server'));
+            }
+          } else {
+            try {
+              const errorData = JSON.parse(xhr.response);
+              reject(new Error(errorData.message || 'Upload failed'));
+            } catch (error) {
+              reject(new Error('Upload failed'));
+            }
+          }
+        });
+
+        xhr.addEventListener('error', () => {
+          reject(new Error('Network error occurred during upload'));
+        });
+
+        xhr.open('POST', '/api/documents');
+        xhr.send(formData);
       });
-
-      console.log('Upload response status:', response.status);
-      const responseData = await response.json();
-      console.log('Upload response data:', responseData);
-
-      if (!response.ok) {
-        throw new Error(responseData.message || 'Upload failed');
-      }
-
-      return responseData;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
@@ -82,7 +104,7 @@ export default function DocumentUpload() {
       setUploadProgress(0);
       toast({
         title: "Document uploaded",
-        description: "Your document has been uploaded and is being processed.",
+        description: "Your document has been uploaded successfully.",
       });
     },
     onError: (error: Error) => {
@@ -138,7 +160,7 @@ export default function DocumentUpload() {
                     accept=".pdf,.docx,.txt"
                     onChange={(e) => {
                       console.log('File selected:', e.target.files);
-                      if (e.target.files) {
+                      if (e.target.files && e.target.files.length > 0) {
                         onChange(e.target.files);
                       }
                     }}
