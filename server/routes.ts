@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
-import { generateEmbeddings } from "./openai";
+import { generateEmbeddings, generateAnswer } from "./openai";
 import { insertDocumentSchema } from "@shared/schema";
 import { findRelevantDocuments } from "./rag";
 
@@ -82,14 +82,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
 
-        // Update document status to completed.  This line requires a 'db' and 'documents' variable to be defined elsewhere and imported.
-        //await db.update(documents).set({ status: 'completed' }).where(eq(documents.id, doc.id));
-
         console.log("Document processing completed:", doc.id);
       } catch (error) {
         console.error("Failed to process document:", error);
-        // Update status to error. This line requires a 'db' and 'documents' variable to be defined elsewhere and imported.
-        //await db.update(documents).set({ status: 'error' }).where(eq(documents.id, doc.id));
       }
 
       res.status(201).json(doc);
