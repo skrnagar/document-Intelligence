@@ -24,6 +24,23 @@ export async function generateEmbeddings(text: string): Promise<number[]> {
   }
 }
 
+function extractRelevantContext(query: string, context: string): string {
+  const queryTerms = query.toLowerCase().split(/\s+/);
+  const sentences = context.split(/[.!?]+/).filter(Boolean);
+
+  // Find sentences most relevant to the query terms
+  const relevantSentences = sentences.filter(sentence => 
+    queryTerms.some(term => sentence.toLowerCase().includes(term))
+  );
+
+  // If no direct matches, include surrounding context
+  if (relevantSentences.length === 0) {
+    return sentences.slice(0, 3).join('. ');
+  }
+
+  return relevantSentences.slice(0, 5).join('. ');
+}
+
 export async function generateAnswer(query: string, context: string): Promise<string> {
   try {
     const response = await openai.chat.completions.create({
@@ -53,25 +70,33 @@ If you find a query about OMR (Optical Mark Recognition) or similar technical te
 
     return response.choices[0].message.content || "I apologize, but I couldn't generate a response. Please try rephrasing your question.";
   } catch (error) {
-    console.warn("OpenAI answer generation failed, using fallback:", error);
+    console.warn("OpenAI answer generation failed:", error);
 
-    // Enhanced fallback response with better context extraction
+    // Enhanced fallback response generation
     try {
-      const sentences = context.split(/[.!?]+/).filter(Boolean);
-      // Find sentences that might be relevant to the query
-      const queryTerms = query.toLowerCase().split(/\s+/);
-      const relevantSentences = sentences.filter(sentence => 
-        queryTerms.some(term => sentence.toLowerCase().includes(term))
-      );
+      const relevantContext = extractRelevantContext(query, context);
 
-      if (relevantSentences.length > 0) {
-        const contextSummary = relevantSentences.slice(0, 3).join('. ');
-        return `Based on the available information:\n\n${contextSummary}\n\nI found these relevant passages in your documents. While I couldn't perform a detailed analysis at this moment due to technical limitations, these excerpts might help answer your question. For a more comprehensive answer, please try again in a moment.`;
+      if (relevantContext) {
+        let fallbackResponse = `Based on the available information that might help answer your question about "${query}":\n\n`;
+        fallbackResponse += relevantContext;
+
+        // Add explanatory text for technical terms
+        if (query.toUpperCase() === "OMR") {
+          fallbackResponse += `\n\nOMR typically refers to Optical Mark Recognition, which is a technology used to detect marked or filled areas on forms like multiple-choice answer sheets. It's similar to but distinct from OCR (Optical Character Recognition) which reads actual text characters.\n\nOMR systems are commonly used in:
+1. Educational testing - for grading multiple-choice exams
+2. Surveys and questionnaires - for automated data collection
+3. Voting systems - for ballot counting
+4. Form processing - for automated form data extraction`;
+        }
+
+        fallbackResponse += "\n\nWhile I'm currently operating in fallback mode due to technical limitations, I've provided the most relevant information from your documents. For a more detailed analysis, please try your question again in a moment.";
+
+        return fallbackResponse;
       }
     } catch (fallbackError) {
       console.error("Fallback response generation failed:", fallbackError);
     }
 
-    return `I apologize, but I'm currently unable to provide a detailed analysis of your question about "${query}". The system is experiencing temporary limitations. Please try your question again in a moment, or rephrase it for better results.`;
+    return `I apologize, but I'm currently experiencing technical limitations that prevent me from providing a detailed analysis of your question about "${query}". This might be due to API rate limits or service constraints. Please try again in a few moments, or rephrase your question to focus on specific aspects you'd like to learn about.`;
   }
 }
