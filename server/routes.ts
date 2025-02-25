@@ -53,24 +53,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json(result.error);
       }
 
-      // Create document first
       const doc = await storage.createDocument({
         ...result.data,
         userId: req.user!.id,
       });
 
-      // Process document in chunks
       try {
         console.log("Processing document:", doc.id);
         const chunks = chunkText(doc.content);
 
         for (const [index, chunkContent] of chunks.entries()) {
           try {
-            // Generate embeddings for chunk
             console.log(`Generating embeddings for chunk ${index + 1}/${chunks.length}`);
             const embedding = await generateEmbeddings(chunkContent);
 
-            // Store chunk with embedding
             await storage.createDocumentChunk({
               documentId: doc.id,
               content: chunkContent,
@@ -130,10 +126,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Generate answer using OpenAI
+      // Prepare context with document metadata for better context understanding
       const context = relevantDocs
-        .map(doc => `Document: ${doc.title}\n${doc.content}`)
-        .join('\n\n');
+        .map(doc => `Document Title: ${doc.title}\nDocument Content:\n${doc.content}\n---\n`)
+        .join('\n');
 
       const answer = await generateAnswer(query, context);
 
