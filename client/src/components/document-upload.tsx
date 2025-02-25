@@ -9,6 +9,8 @@ import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "
 import { useToast } from "@/hooks/use-toast";
 import { Upload } from "lucide-react";
 import { z } from "zod";
+import { Progress } from "@/components/ui/progress";
+import React from 'react';
 
 // Extend the schema to include file
 const uploadSchema = insertDocumentSchema.extend({
@@ -32,6 +34,7 @@ type UploadFormData = z.infer<typeof uploadSchema>;
 
 export default function DocumentUpload() {
   const { toast } = useToast();
+  const [uploadProgress, setUploadProgress] = React.useState(0);
 
   const form = useForm<UploadFormData>({
     resolver: zodResolver(uploadSchema),
@@ -46,27 +49,45 @@ export default function DocumentUpload() {
       formData.append('title', data.title);
       formData.append('file', data.file[0]);
 
-      const res = await fetch('/api/documents', {
-        method: 'POST',
-        body: formData,
+      const xhr = new XMLHttpRequest();
+
+      const promise = new Promise((resolve, reject) => {
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            const progress = (event.loaded / event.total) * 100;
+            setUploadProgress(progress);
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(JSON.parse(xhr.response));
+          } else {
+            reject(new Error(xhr.response || 'Upload failed'));
+          }
+        });
+
+        xhr.addEventListener('error', () => {
+          reject(new Error('Upload failed'));
+        });
       });
 
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || 'Upload failed');
-      }
+      xhr.open('POST', '/api/documents');
+      xhr.send(formData);
 
-      return res.json();
+      return promise;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
       form.reset();
+      setUploadProgress(0);
       toast({
         title: "Document uploaded",
         description: "Your document has been uploaded and is being processed.",
       });
     },
     onError: (error: Error) => {
+      setUploadProgress(0);
       toast({
         title: "Upload failed",
         description: error.message,
@@ -74,6 +95,19 @@ export default function DocumentUpload() {
       });
     },
   });
+
+  // Handle beforeunload event
+  React.useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (uploadMutation.isPending) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [uploadMutation.isPending]);
 
   return (
     <Form {...form}>
@@ -116,6 +150,15 @@ export default function DocumentUpload() {
             </FormItem>
           )}
         />
+
+        {uploadProgress > 0 && uploadProgress < 100 && (
+          <div className="space-y-2">
+            <Progress value={uploadProgress} className="w-full" />
+            <p className="text-sm text-muted-foreground text-center">
+              Uploading... {Math.round(uploadProgress)}%
+            </p>
+          </div>
+        )}
 
         <Button 
           type="submit" 

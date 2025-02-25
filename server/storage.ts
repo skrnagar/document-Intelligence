@@ -19,6 +19,8 @@ export interface IStorage {
   getDocumentChunks(documentId: number): Promise<DocumentChunk[]>;
   createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk>;
   sessionStore: session.Store;
+  deleteDocument(id: number): Promise<void>;
+  updateDocument(id: number, updates: Partial<InsertDocument>): Promise<Document>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -78,6 +80,19 @@ export class DatabaseStorage implements IStorage {
       .values(chunk)
       .returning();
     return documentChunk;
+  }
+
+  async deleteDocument(id: number): Promise<void> {
+    await db.delete(documents).where(eq(documents.id, id));
+  }
+
+  async updateDocument(id: number, updates: Partial<InsertDocument>): Promise<Document> {
+    const [document] = await db
+      .update(documents)
+      .set(updates)
+      .where(eq(documents.id, id))
+      .returning();
+    return document;
   }
 }
 
