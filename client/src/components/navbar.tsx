@@ -19,12 +19,17 @@ export default function Navbar() {
             <Link href="/qa">
               <Button variant="ghost" className="text-muted-foreground hover:text-foreground">Q&A</Button>
             </Link>
+            {user?.role === 'admin' && (
+              <Link href="/admin">
+                <Button variant="ghost" className="text-muted-foreground hover:text-foreground">Admin</Button>
+              </Link>
+            )}
           </div>
         </div>
 
         <div className="flex items-center space-x-4">
           <span className="text-sm text-muted-foreground">
-            Welcome, {user?.username}
+            Welcome, {user?.username} ({user?.role})
           </span>
           <Button
             variant="outline"
