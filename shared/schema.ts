@@ -45,6 +45,8 @@ export const insertUserSchema = createInsertSchema(users).pick({
 export const insertDocumentSchema = createInsertSchema(documents).pick({
   title: true,
   content: true,
+}).extend({
+  title: z.string().min(1, "Title is required"),
 });
 
 // Schema for document chunk insertion

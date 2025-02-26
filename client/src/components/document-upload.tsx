@@ -1,6 +1,6 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { InsertDocument, insertDocumentSchema } from "@shared/schema";
+import { InsertDocument } from "@shared/schema";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,8 @@ import React from 'react';
 import { queryClient } from "@/lib/queryClient";
 
 // Extend the schema to include file
-const uploadSchema = insertDocumentSchema.extend({
+const uploadSchema = z.object({
+  title: z.string().min(1, "Title is required"),
   file: z.instanceof(FileList)
     .transform(list => list.item(0))
     .refine(file => file != null, "Please select a file")
@@ -96,8 +97,7 @@ export default function DocumentUpload() {
 
         console.log('Upload response received:', {
           status: response.status,
-          statusText: response.statusText,
-          headers: Object.fromEntries(response.headers.entries())
+          statusText: response.statusText
         });
 
         const responseData = await response.json();
@@ -110,18 +110,11 @@ export default function DocumentUpload() {
         return responseData;
       } catch (error) {
         console.error('Upload error:', error);
-        if (error instanceof Error) {
-          console.error('Error details:', {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          });
-        }
         throw error;
       }
     },
     onSuccess: () => {
-      console.log('Upload successful, resetting form and invalidating queries');
+      console.log('Upload successful, resetting form');
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
       form.reset();
       if (fileInputRef.current) {
@@ -144,33 +137,12 @@ export default function DocumentUpload() {
     },
   });
 
-  const onSubmit = async (data: UploadFormData) => {
-    try {
-      console.log('Form submitted with data:', {
-        title: data.title,
-        file: data.file && {
-          name: data.file.name,
-          type: data.file.type,
-          size: data.file.size
-        }
-      });
-
-      await uploadMutation.mutateAsync(data);
-    } catch (error) {
-      console.error('Submit error:', error);
-      if (error instanceof Error) {
-        console.error('Error details:', {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        });
-      }
-    }
-  };
-
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      <form 
+        onSubmit={form.handleSubmit((data) => uploadMutation.mutate(data))} 
+        className="space-y-4"
+      >
         <FormField
           control={form.control}
           name="title"
