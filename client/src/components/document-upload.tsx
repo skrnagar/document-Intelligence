@@ -21,12 +21,27 @@ const uploadSchema = insertDocumentSchema.extend({
       file => {
         if (!file) return false;
         const validTypes = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
+        console.log('Validating file type:', {
+          fileName: file.name,
+          fileType: file.type,
+          isValid: validTypes.includes(file.type)
+        });
         return validTypes.includes(file.type);
       },
       "Invalid file type. Only PDF, DOCX, and TXT files are allowed."
     )
     .refine(
-      file => file && file.size <= 5 * 1024 * 1024,
+      file => {
+        if (!file) return false;
+        const isValidSize = file.size <= 5 * 1024 * 1024;
+        console.log('Validating file size:', {
+          fileName: file.name,
+          fileSize: file.size,
+          maxSize: 5 * 1024 * 1024,
+          isValid: isValidSize
+        });
+        return isValidSize;
+      },
       "File size must be less than 5MB"
     ),
 });
@@ -45,35 +60,48 @@ export default function DocumentUpload() {
     },
   });
 
+  console.log('Form state:', {
+    errors: form.formState.errors,
+    isDirty: form.formState.isDirty,
+    isSubmitting: form.formState.isSubmitting
+  });
+
   const uploadMutation = useMutation({
     mutationFn: async (data: UploadFormData) => {
+      console.log('Starting upload mutation with data:', {
+        title: data.title,
+        file: data.file && {
+          name: data.file.name,
+          type: data.file.type,
+          size: data.file.size
+        }
+      });
+
       const file = data.file;
       if (!file) {
+        console.error('No file selected for upload');
         throw new Error('No file selected');
       }
-
-      console.log('Starting upload with data:', {
-        title: data.title,
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type
-      });
 
       const formData = new FormData();
       formData.append('title', data.title);
       formData.append('file', file);
 
       try {
+        console.log('Sending upload request...');
         const response = await fetch('/api/documents', {
           method: 'POST',
           body: formData,
         });
 
-        const responseData = await response.json();
-        console.log('Upload response:', {
+        console.log('Upload response received:', {
           status: response.status,
-          data: responseData
+          statusText: response.statusText,
+          headers: Object.fromEntries(response.headers.entries())
         });
+
+        const responseData = await response.json();
+        console.log('Upload response data:', responseData);
 
         if (!response.ok) {
           throw new Error(responseData.message || 'Upload failed');
@@ -82,10 +110,18 @@ export default function DocumentUpload() {
         return responseData;
       } catch (error) {
         console.error('Upload error:', error);
+        if (error instanceof Error) {
+          console.error('Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          });
+        }
         throw error;
       }
     },
     onSuccess: () => {
+      console.log('Upload successful, resetting form and invalidating queries');
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
       form.reset();
       if (fileInputRef.current) {
@@ -98,7 +134,7 @@ export default function DocumentUpload() {
       });
     },
     onError: (error: Error) => {
-      console.error('Upload error:', error);
+      console.error('Upload mutation error:', error);
       setUploadProgress(0);
       toast({
         title: "Upload failed",
@@ -118,9 +154,22 @@ export default function DocumentUpload() {
           type: data.file.type
         }
       });
+
+      if (!data.file) {
+        console.error('No file selected');
+        return;
+      }
+
       await uploadMutation.mutateAsync(data);
     } catch (error) {
       console.error('Submit error:', error);
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        });
+      }
     }
   };
 
@@ -155,7 +204,13 @@ export default function DocumentUpload() {
                     accept=".pdf,.docx,.txt"
                     onChange={(e) => {
                       const files = e.target.files;
-                      console.log('File selected:', files);
+                      console.log('File input change event:', {
+                        files: files ? Array.from(files).map(f => ({
+                          name: f.name,
+                          type: f.type,
+                          size: f.size
+                        })) : null
+                      });
                       if (files && files.length > 0) {
                         onChange(files);
                       }
