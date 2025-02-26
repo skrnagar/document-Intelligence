@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { Upload } from "lucide-react";
+import { Upload, Loader2 } from "lucide-react";
 import { z } from "zod";
 import { Progress } from "@/components/ui/progress";
 import React from 'react';
@@ -36,6 +36,7 @@ type UploadFormData = z.infer<typeof uploadSchema>;
 export default function DocumentUpload() {
   const { toast } = useToast();
   const [uploadProgress, setUploadProgress] = React.useState(0);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const form = useForm<UploadFormData>({
     resolver: zodResolver(uploadSchema),
@@ -87,6 +88,9 @@ export default function DocumentUpload() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
       form.reset();
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       setUploadProgress(0);
       toast({
         title: "Document uploaded",
@@ -146,6 +150,7 @@ export default function DocumentUpload() {
               <FormControl>
                 <div className="flex items-center gap-4">
                   <Input
+                    ref={fileInputRef}
                     type="file"
                     accept=".pdf,.docx,.txt"
                     onChange={(e) => {
@@ -183,7 +188,10 @@ export default function DocumentUpload() {
           className="w-full"
         >
           {uploadMutation.isPending ? (
-            <>Processing...</>
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Uploading...
+            </>
           ) : (
             <>
               <Upload className="w-4 h-4 mr-2" />
