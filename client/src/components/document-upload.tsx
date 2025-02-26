@@ -20,8 +20,8 @@ const uploadSchema = insertDocumentSchema.extend({
     .refine(
       file => {
         if (!file) return false;
-        const validTypes = [".pdf", ".docx", ".txt"];
-        return validTypes.some(type => file.name.toLowerCase().endsWith(type));
+        const validTypes = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
+        return validTypes.includes(file.type);
       },
       "Invalid file type. Only PDF, DOCX, and TXT files are allowed."
     )
@@ -149,9 +149,10 @@ export default function DocumentUpload() {
                     type="file"
                     accept=".pdf,.docx,.txt"
                     onChange={(e) => {
-                      console.log('File selected:', e.target.files);
-                      if (e.target.files && e.target.files.length > 0) {
-                        onChange(e.target.files);
+                      const files = e.target.files;
+                      console.log('File selected:', files);
+                      if (files && files.length > 0) {
+                        onChange(files);
                       }
                     }}
                     {...field}
