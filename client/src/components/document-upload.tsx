@@ -150,15 +150,10 @@ export default function DocumentUpload() {
         title: data.title,
         file: data.file && {
           name: data.file.name,
-          size: data.file.size,
-          type: data.file.type
+          type: data.file.type,
+          size: data.file.size
         }
       });
-
-      if (!data.file) {
-        console.error('No file selected');
-        return;
-      }
 
       await uploadMutation.mutateAsync(data);
     } catch (error) {
@@ -237,8 +232,8 @@ export default function DocumentUpload() {
           </div>
         )}
 
-        <Button 
-          type="submit" 
+        <Button
+          type="submit"
           disabled={uploadMutation.isPending}
           className="w-full"
         >
