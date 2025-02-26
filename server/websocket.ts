@@ -25,11 +25,17 @@ export function setupWebSocket(httpServer: HTTPServer) {
     // Join document collaboration room
     socket.on("join-document", async (data: { documentId: number, userId: number }) => {
       const { documentId, userId } = data;
-      
+
       // Check if user has access to the document
       const doc = await storage.getDocument(documentId);
       if (!doc) {
         socket.emit("error", "Document not found");
+        return;
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        socket.emit("error", "User not found");
         return;
       }
 
@@ -40,18 +46,19 @@ export function setupWebSocket(httpServer: HTTPServer) {
       }
 
       socket.join(`document-${documentId}`);
-      
+
       // Update user presence
       await storage.updateUserPresence({
         userId,
         documentId,
         lastActive: new Date(),
+        cursor: null
       });
 
       // Notify others about new user
       socket.to(`document-${documentId}`).emit("user-joined", {
         userId,
-        username: collaboration.username,
+        username: user.username,
       });
     });
 
@@ -59,7 +66,7 @@ export function setupWebSocket(httpServer: HTTPServer) {
     socket.on("cursor-move", async (data: { documentId: number, cursor: DocumentCursor }) => {
       const { documentId, cursor } = data;
       socket.to(`document-${documentId}`).emit("cursor-update", cursor);
-      
+
       // Update cursor position in database
       await storage.updateUserPresence({
         userId: cursor.userId,
@@ -70,14 +77,20 @@ export function setupWebSocket(httpServer: HTTPServer) {
     });
 
     // Handle document changes
-    socket.on("document-change", async (change: DocumentChange) => {
+    socket.on("document-change", async (change: { documentId: number, userId: number, content: string, changeType: string, position?: any }) => {
       const { documentId } = change;
-      
+
       // Save change to database
-      await storage.createDocumentChange(change);
-      
+      const savedChange = await storage.createDocumentChange({
+        documentId: change.documentId,
+        userId: change.userId,
+        changeType: change.changeType,
+        content: change.content,
+        position: change.position
+      });
+
       // Broadcast change to other users
-      socket.to(`document-${documentId}`).emit("document-updated", change);
+      socket.to(`document-${documentId}`).emit("document-updated", savedChange);
     });
 
     // Handle disconnection
