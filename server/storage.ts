@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db";
 
-const PostgresSessionStore = connectPg(session);
+const PgSessionStore = connectPg(session);
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -27,13 +27,17 @@ export interface IStorage {
   createDocumentCollaboration(collab: InsertDocumentCollaboration): Promise<DocumentCollaboration>;
   updateUserPresence(presence: InsertUserPresence & { lastActive: Date }): Promise<UserPresence>;
   createDocumentChange(change: InsertDocumentChange): Promise<DocumentChange>;
+
+  // New admin methods
+  getAllUsers(): Promise<User[]>;
+  updateUserRole(id: number, role: string): Promise<User | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
   sessionStore: session.Store;
 
   constructor() {
-    this.sessionStore = new PostgresSessionStore({
+    this.sessionStore = new PgSessionStore({
       pool,
       createTableIfMissing: true,
     });
@@ -81,18 +85,6 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getDocumentChunks(documentId: number): Promise<DocumentChunk[]> {
-    return db.select().from(documentChunks).where(eq(documentChunks.documentId, documentId));
-  }
-
-  async createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk> {
-    const [documentChunk] = await db
-      .insert(documentChunks)
-      .values(chunk)
-      .returning();
-    return documentChunk;
-  }
-
   async deleteDocument(id: number): Promise<void> {
     await db.delete(documents).where(eq(documents.id, id));
   }
@@ -104,6 +96,18 @@ export class DatabaseStorage implements IStorage {
       .where(eq(documents.id, id))
       .returning();
     return document;
+  }
+
+  async getDocumentChunks(documentId: number): Promise<DocumentChunk[]> {
+    return db.select().from(documentChunks).where(eq(documentChunks.documentId, documentId));
+  }
+
+  async createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk> {
+    const [documentChunk] = await db
+      .insert(documentChunks)
+      .values(chunk)
+      .returning();
+    return documentChunk;
   }
 
   async getDocumentCollaboration(documentId: number, userId: number): Promise<DocumentCollaboration | undefined> {
@@ -147,6 +151,19 @@ export class DatabaseStorage implements IStorage {
       .values(change)
       .returning();
     return documentChange;
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return db.select().from(users);
+  }
+
+  async updateUserRole(id: number, role: string): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({ role })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
   }
 }
 
