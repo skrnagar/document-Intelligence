@@ -26,9 +26,14 @@ if (!fs.existsSync(uploadsDir)) {
 // Configure multer for file uploads
 const multerStorage = multer.diskStorage({
   destination: function (req, file, cb) {
+    console.log('Multer storing file:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype
+    });
     cb(null, 'uploads/');
   },
   filename: function (req, file, cb) {
+    console.log('Generating filename for:', file.originalname);
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
   }
@@ -40,11 +45,17 @@ const upload = multer({
     fileSize: 5 * 1024 * 1024, // 5MB limit
   },
   fileFilter: (_req, file, cb) => {
+    console.log('Filtering file:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype
+    });
     const allowedTypes = ['.pdf', '.docx', '.txt'];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowedTypes.includes(ext)) {
+      console.log('File type accepted:', ext);
       cb(null, true);
     } else {
+      console.log('File type rejected:', ext);
       cb(new Error('Invalid file type. Only PDF, DOCX, and TXT files are allowed.'));
     }
   }
@@ -92,11 +103,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         file: req.file ? {
           filename: req.file.filename,
           mimetype: req.file.mimetype,
-          size: req.file.size
+          size: req.file.size,
+          path: req.file.path
         } : null
       });
 
       if (!req.file) {
+        console.error('No file uploaded in request');
         return res.status(400).json({ message: "No file uploaded" });
       }
 
@@ -104,51 +117,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fileType = getFileType(req.file.originalname);
       console.log('Processing file type:', fileType);
 
-      const parsedDoc = await parseDocument(req.file.path, fileType);
-      console.log('Document parsed successfully:', {
-        title: req.body.title || parsedDoc.metadata.title,
-        contentLength: parsedDoc.content.length
-      });
+      try {
+        const parsedDoc = await parseDocument(req.file.path, fileType);
+        console.log('Document parsed successfully:', {
+          title: req.body.title || parsedDoc.metadata.title,
+          contentLength: parsedDoc.content.length,
+          metadata: parsedDoc.metadata
+        });
 
-      // Create document with parsed content
-      const doc = await storage.createDocument({
-        title: req.body.title || parsedDoc.metadata.title || path.basename(req.file.originalname),
-        content: parsedDoc.content,
-        userId: req.user!.id,
-      });
+        // Create document with parsed content
+        const doc = await storage.createDocument({
+          title: req.body.title || parsedDoc.metadata.title || path.basename(req.file.originalname),
+          content: parsedDoc.content,
+          userId: req.user!.id,
+        });
 
-      console.log('Document created in database:', doc.id);
+        console.log('Document created in database:', {
+          id: doc.id,
+          title: doc.title
+        });
 
-      // Process document chunks for RAG
-      const chunks = chunkText(doc.content);
-      console.log(`Processing ${chunks.length} chunks for document ${doc.id}`);
+        // Process document chunks for RAG
+        const chunks = chunkText(doc.content);
+        console.log(`Processing ${chunks.length} chunks for document ${doc.id}`);
 
-      for (const [index, chunkContent] of chunks.entries()) {
-        try {
-          console.log(`Processing chunk ${index + 1}/${chunks.length}`);
-          const embedding = await generateEmbeddings(chunkContent);
+        for (const [index, chunkContent] of chunks.entries()) {
+          try {
+            console.log(`Processing chunk ${index + 1}/${chunks.length}`);
+            const embedding = await generateEmbeddings(chunkContent);
 
-          await storage.createDocumentChunk({
-            documentId: doc.id,
-            content: chunkContent,
-            embedding,
-            metadata: {
-              position: index,
-              format: parsedDoc.metadata.format,
-              pageCount: parsedDoc.metadata.pageCount
-            }
-          });
-        } catch (error) {
-          console.error(`Error processing chunk ${index + 1}:`, error);
+            await storage.createDocumentChunk({
+              documentId: doc.id,
+              content: chunkContent,
+              embedding,
+              metadata: {
+                position: index,
+                format: parsedDoc.metadata.format,
+                pageCount: parsedDoc.metadata.pageCount
+              }
+            });
+          } catch (error) {
+            console.error(`Error processing chunk ${index + 1}:`, error);
+          }
         }
+
+        // Clean up uploaded file
+        fs.unlink(req.file.path, (err) => {
+          if (err) console.error("Error removing uploaded file:", err);
+        });
+
+        console.log('Upload process completed successfully');
+        res.status(201).json(doc);
+      } catch (parseError) {
+        console.error('Error parsing document:', parseError);
+        throw parseError;
       }
-
-      // Clean up uploaded file
-      fs.unlink(req.file.path, (err) => {
-        if (err) console.error("Error removing uploaded file:", err);
-      });
-
-      res.status(201).json(doc);
     } catch (error) {
       console.error("Error processing document upload:", error);
 
