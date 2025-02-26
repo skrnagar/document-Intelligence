@@ -17,7 +17,7 @@ interface UseCollaborationProps {
 
 export function useCollaboration({ documentId, onDocumentChange }: UseCollaborationProps) {
   const { user } = useAuth();
-  const [activeUsers, setActiveUsers] = useState<UserPresence[]>([]);
+  const [activeUsers, setActiveUsers] = useState<{ userId: number; username: string }[]>([]);
   const [cursors, setCursors] = useState<DocumentCursor[]>([]);
   const socketRef = useRef<Socket>();
 
@@ -35,7 +35,7 @@ export function useCollaboration({ documentId, onDocumentChange }: UseCollaborat
 
     // Handle user joining
     socketRef.current.on('user-joined', (userData: { userId: number; username: string }) => {
-      setActiveUsers(prev => [...prev, { userId: userData.userId, username: userData.username }]);
+      setActiveUsers(prev => [...prev, userData]);
     });
 
     // Handle cursor updates
@@ -79,17 +79,14 @@ export function useCollaboration({ documentId, onDocumentChange }: UseCollaborat
   };
 
   // Function to emit document changes
-  const emitChange = (change: Omit<DocumentChange, 'userId' | 'documentId'>) => {
+  const emitChange = (change: Omit<DocumentChange, 'id' | 'userId' | 'documentId' | 'createdAt'>) => {
     if (!socketRef.current || !user) return;
 
-    const fullChange: DocumentChange = {
+    socketRef.current.emit('document-change', {
       ...change,
       userId: user.id,
-      documentId,
-      createdAt: new Date()
-    };
-
-    socketRef.current.emit('document-change', fullChange);
+      documentId
+    });
   };
 
   return {
