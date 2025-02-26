@@ -1,8 +1,8 @@
-import { User, InsertUser, Document, InsertDocument, DocumentChunk, InsertDocumentChunk } from "@shared/schema";
+import { User, InsertUser, Document, InsertDocument, DocumentChunk, InsertDocumentChunk, DocumentCollaboration, InsertDocumentCollaboration, DocumentChange, InsertDocumentChange, UserPresence, InsertUserPresence } from "@shared/schema";
 import session from "express-session";
 import type { Embedding } from "./rag";
 import { db } from "./db";
-import { documents, users, documentChunks } from "@shared/schema";
+import { documents, users, documentChunks, documentCollaborations, documentChanges, userPresence } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db";
@@ -21,6 +21,12 @@ export interface IStorage {
   sessionStore: session.Store;
   deleteDocument(id: number): Promise<void>;
   updateDocument(id: number, updates: Partial<InsertDocument>): Promise<Document>;
+
+  // New collaboration methods
+  getDocumentCollaboration(documentId: number, userId: number): Promise<DocumentCollaboration | undefined>;
+  createDocumentCollaboration(collab: InsertDocumentCollaboration): Promise<DocumentCollaboration>;
+  updateUserPresence(presence: InsertUserPresence & { lastActive: Date }): Promise<UserPresence>;
+  createDocumentChange(change: InsertDocumentChange): Promise<DocumentChange>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -98,6 +104,49 @@ export class DatabaseStorage implements IStorage {
       .where(eq(documents.id, id))
       .returning();
     return document;
+  }
+
+  async getDocumentCollaboration(documentId: number, userId: number): Promise<DocumentCollaboration | undefined> {
+    const [collaboration] = await db
+      .select()
+      .from(documentCollaborations)
+      .where(eq(documentCollaborations.documentId, documentId))
+      .where(eq(documentCollaborations.userId, userId));
+    return collaboration;
+  }
+
+  async createDocumentCollaboration(collab: InsertDocumentCollaboration): Promise<DocumentCollaboration> {
+    const [collaboration] = await db
+      .insert(documentCollaborations)
+      .values(collab)
+      .returning();
+    return collaboration;
+  }
+
+  async updateUserPresence(presence: InsertUserPresence & { lastActive: Date }): Promise<UserPresence> {
+    const [result] = await db
+      .insert(userPresence)
+      .values({
+        ...presence,
+        lastActive: presence.lastActive
+      })
+      .onConflictDoUpdate({
+        target: [userPresence.userId, userPresence.documentId],
+        set: {
+          lastActive: presence.lastActive,
+          cursor: presence.cursor
+        }
+      })
+      .returning();
+    return result;
+  }
+
+  async createDocumentChange(change: InsertDocumentChange): Promise<DocumentChange> {
+    const [documentChange] = await db
+      .insert(documentChanges)
+      .values(change)
+      .returning();
+    return documentChange;
   }
 }
 
