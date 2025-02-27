@@ -1,0 +1,60 @@
+Application Components
+1. Python Backend (Document Ingestion and RAG-driven Q&A)
+o Purpose: Develop a backend application in Python to handle
+document ingestion, embedding generation, and retrieval-based Q&A
+(RAG).
+o Key APIs:
+▪ Document Ingestion API: Accepts document data, generates
+embeddings using a Large Language Model (LLM) library, and
+stores them for future retrieval.
+▪ Q&A API: Accepts user questions, retrieves relevant document
+embeddings, and generates answers based on the retrieved
+content using RAG.
+▪ Document Selection API: Enables users to specify which
+documents to consider in the RAG-based Q&A process.
+o Tools/Libraries:
+▪ Use LLM libraries (e.g., OpenAI API or Hugging Face
+Transformers).
+▪ Database for storing embeddings (Postgres preferred).
+▪ Asynchronous programming for efficient handling of API
+requests.
+2. NestJS Backend (User Management and Document Management)
+o Purpose: Create a backend service using NestJS to manage user
+authentication, document management, and ingestion controls.
+o Key APIs:
+▪ Authentication APIs: Register, login, logout, and handle user
+roles (admin, editor, viewer).
+▪ User Management APIs: Admin-only functionality for managing
+user roles and permissions.
+▪ Document Management APIs: CRUD operations for
+documents, including the ability to upload documents.
+▪ Ingestion Trigger API: Allows triggering the ingestion process
+in the Python backend, possibly via a webhook or API call.
+▪ Ingestion Management API: Tracks and manages ongoing
+ingestion processes.
+o Tools/Libraries:
+▪ TypeScript for consistent type management.
+▪ Database integration (Postgres recommended).
+▪ JWT for authentication, with role-based authorization.
+3. ▪ Microservices architecture to facilitate interaction between
+NestJS and the Python backend.
+Angular Frontend (User Interface for Management and Q&A)
+o Purpose: Develop an Angular-based frontend to handle user
+interactions with the backend services, document management,
+ingestion management, and RAG-based Q&A interface.
+o Key Pages/Features:
+▪ Sign Up, Login, and Logout: User authentication interface.
+▪ User Management: Admin-only access for managing users and
+assigning roles.
+▪ Document Upload and Management: Interface to upload and
+manage documents.
+▪ Ingestion Management: Interface to trigger and monitor
+ingestion status.
+▪ Q&A Interface: A user-friendly interface for asking questions,
+receiving answers, and displaying relevant document excerpts
+(using RAG).
+o UI Considerations:
+▪ Responsive design for multiple devices and browsers.
+▪ Modular, reusable components for better code structure.
+▪ Consistency with design patterns to ensure maintainability and
+scalability.
