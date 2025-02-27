@@ -10,6 +10,7 @@ import { generateEmbeddings, generateAnswer } from "./openai";
 import { insertDocumentSchema } from "@shared/schema";
 import { findRelevantDocuments } from "./rag";
 import { roleGuard } from './middleware/role-guard';
+import axios from 'axios';
 
 function ensureAuthenticated(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated()) {
@@ -125,16 +126,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update document status to processing
       await storage.updateDocument(doc.id, { status: 'processing' });
 
-      // Trigger document ingestion (to be implemented with Python backend)
-      // TODO: Implement webhook or API call to Python backend
+      // Send document to Python backend for processing
+      try {
+        await axios.post('http://localhost:5001/process', {
+          document_id: doc.id,
+          content: doc.content,
+          metadata: {
+            title: doc.title,
+            userId: doc.userId
+          }
+        });
 
-      res.json({ message: "Document ingestion started", documentId: doc.id });
+        res.json({ message: "Document ingestion started", documentId: doc.id });
+      } catch (error) {
+        console.error("Error sending document to Python backend:", error);
+        // Revert document status
+        await storage.updateDocument(doc.id, { status: 'error' });
+        throw new Error("Failed to start document processing");
+      }
     } catch (error) {
       console.error("Error starting document ingestion:", error);
       res.status(500).json({ message: "Failed to start document ingestion" });
     }
   });
 
+  // Callback endpoint for Python backend
+  app.post("/api/documents/:id/callback", async (req, res) => {
+    try {
+      const { status, error } = req.body;
+      const documentId = parseInt(req.params.id);
+
+      const doc = await storage.getDocument(documentId);
+      if (!doc) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      await storage.updateDocument(documentId, { 
+        status: status,
+        ...(error && { errorMessage: error })
+      });
+
+      res.json({ message: "Status updated successfully" });
+    } catch (error) {
+      console.error("Error processing callback:", error);
+      res.status(500).json({ message: "Failed to process callback" });
+    }
+  });
+
+  // Get document processing status
   app.get("/api/documents/:id/status", ensureAuthenticated, async (req, res) => {
     try {
       const doc = await storage.getDocument(parseInt(req.params.id));
@@ -142,7 +181,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Document not found" });
       }
 
-      res.json({ status: doc.status });
+      // Get detailed status from Python backend
+      try {
+        const response = await axios.get(`http://localhost:5001/status/${doc.id}`);
+        res.json({ ...response.data, documentId: doc.id });
+      } catch (error) {
+        // Fallback to basic status if Python backend is unavailable
+        res.json({ status: doc.status, documentId: doc.id });
+      }
     } catch (error) {
       console.error("Error fetching document status:", error);
       res.status(500).json({ message: "Failed to fetch document status" });
