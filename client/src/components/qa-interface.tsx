@@ -12,6 +12,7 @@ import { Loader2, Book, AlertCircle } from "lucide-react";
 import { Document } from "@shared/schema";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { useToast } from "@/hooks/use-toast";
 
 const querySchema = z.object({
   query: z.string().min(1, "Please enter a question"),
@@ -23,14 +24,27 @@ type QueryForm = z.infer<typeof querySchema>;
 interface QAResponse {
   answer: string;
   relevantDocs: Document[];
+  confidence?: number;
+  processingTime?: number;
 }
 
 export default function QAInterface() {
+  const { toast } = useToast();
   const [answer, setAnswer] = useState<QAResponse | null>(null);
   const [selectedDocs, setSelectedDocs] = useState<number[]>([]);
 
-  const { data: documents, isLoading: isLoadingDocs } = useQuery<Document[]>({
+  const { data: documents, isLoading: isLoadingDocs, error: docsError } = useQuery<Document[]>({
     queryKey: ["/api/documents"],
+    staleTime: 1000 * 60, // Cache for 1 minute
+    gcTime: 1000 * 60 * 5, // Keep unused data for 5 minutes
+    retry: 2,
+    onError: (error: Error) => {
+      toast({
+        title: "Error loading documents",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
   });
 
   const form = useForm<QueryForm>({
@@ -46,9 +60,28 @@ export default function QAInterface() {
       const res = await apiRequest("POST", "/api/qa", data);
       return res.json();
     },
+    onMutate: () => {
+      // Clear previous answer while loading
+      setAnswer(null);
+    },
     onSuccess: (data: QAResponse) => {
       setAnswer(data);
       form.reset({ query: "" });
+
+      if (data.confidence && data.confidence < 0.7) {
+        toast({
+          title: "Low Confidence Answer",
+          description: "The AI is not very confident about this answer. Consider rephrasing your question or selecting different documents.",
+          variant: "warning",
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error generating answer",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -68,6 +101,18 @@ export default function QAInterface() {
       <div className="flex justify-center p-8">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
+    );
+  }
+
+  if (docsError) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Error Loading Documents</AlertTitle>
+        <AlertDescription>
+          Failed to load documents. Please try refreshing the page.
+        </AlertDescription>
+      </Alert>
     );
   }
 
@@ -107,8 +152,11 @@ export default function QAInterface() {
                     }
                   }}
                 />
-                <div>
-                  <label htmlFor={`doc-${doc.id}`} className="text-sm font-medium">
+                <div className="flex-1">
+                  <label
+                    htmlFor={`doc-${doc.id}`}
+                    className="text-sm font-medium cursor-pointer"
+                  >
                     {doc.title}
                   </label>
                   <p className="text-sm text-muted-foreground line-clamp-2">
@@ -133,7 +181,7 @@ export default function QAInterface() {
                   <Textarea 
                     {...field} 
                     placeholder="What would you like to know about your documents?" 
-                    className="min-h-[100px]"
+                    className="min-h-[100px] resize-y"
                   />
                 </FormControl>
                 <FormMessage />
@@ -163,6 +211,11 @@ export default function QAInterface() {
           <Card>
             <CardHeader>
               <CardTitle>Answer</CardTitle>
+              {answer.processingTime && (
+                <CardDescription>
+                  Generated in {(answer.processingTime / 1000).toFixed(2)} seconds
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent>
               <p className="text-lg leading-relaxed whitespace-pre-wrap">{answer.answer}</p>
