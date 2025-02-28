@@ -33,6 +33,8 @@ export default function DocumentList() {
 
   const { data: documents, isLoading, error } = useQuery<Document[]>({
     queryKey: ["/api/documents"],
+    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+    gcTime: 1000 * 60 * 15, // Keep unused data for 15 minutes
     retry: 3,
     onError: (error: Error) => {
       console.error('Error fetching documents:', error);
@@ -48,18 +50,39 @@ export default function DocumentList() {
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/documents/${id}`);
     },
+    onMutate: async (id) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/documents"] });
+
+      // Snapshot the previous value
+      const previousDocs = queryClient.getQueryData<Document[]>(["/api/documents"]);
+
+      // Optimistically remove the document
+      if (previousDocs) {
+        queryClient.setQueryData<Document[]>(
+          ["/api/documents"],
+          previousDocs.filter(doc => doc.id !== id)
+        );
+      }
+
+      return { previousDocs };
+    },
+    onError: (error: Error, id, context) => {
+      // Revert optimistic update
+      if (context?.previousDocs) {
+        queryClient.setQueryData(["/api/documents"], context.previousDocs);
+      }
+      toast({
+        title: "Delete failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
       toast({
         title: "Document deleted",
         description: "The document has been deleted successfully.",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Delete failed",
-        description: error.message,
-        variant: "destructive",
       });
     },
   });
@@ -69,19 +92,37 @@ export default function DocumentList() {
       const res = await apiRequest("PATCH", `/api/documents/${id}`, { title });
       return res.json();
     },
+    onMutate: async ({ id, title }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/documents"] });
+      const previousDocs = queryClient.getQueryData<Document[]>(["/api/documents"]);
+
+      if (previousDocs) {
+        queryClient.setQueryData<Document[]>(
+          ["/api/documents"],
+          previousDocs.map(doc =>
+            doc.id === id ? { ...doc, title } : doc
+          )
+        );
+      }
+
+      return { previousDocs };
+    },
+    onError: (error: Error, variables, context) => {
+      if (context?.previousDocs) {
+        queryClient.setQueryData(["/api/documents"], context.previousDocs);
+      }
+      toast({
+        title: "Update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
       setEditDoc(null);
       toast({
         title: "Document updated",
         description: "The document title has been updated successfully.",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Update failed",
-        description: error.message,
-        variant: "destructive",
       });
     },
   });
